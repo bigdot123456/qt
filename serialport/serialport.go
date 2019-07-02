@@ -10,6 +10,7 @@ import "C"
 import (
 	"github.com/therecipe/qt"
 	"github.com/therecipe/qt/core"
+	"reflect"
 	"runtime"
 	"strings"
 	"unsafe"
@@ -20,6 +21,19 @@ func cGoUnpackString(s C.struct_QtSerialPort_PackedString) string {
 		return C.GoString(s.data)
 	}
 	return C.GoStringN(s.data, C.int(s.len))
+}
+func cGoUnpackBytes(s C.struct_QtSerialPort_PackedString) []byte {
+	if int(s.len) == -1 {
+		gs := C.GoString(s.data)
+		return *(*[]byte)(unsafe.Pointer(&gs))
+	}
+	return C.GoBytes(unsafe.Pointer(s.data), C.int(s.len))
+}
+func unpackStringList(s string) []string {
+	if len(s) == 0 {
+		return make([]string, 0)
+	}
+	return strings.Split(s, "¡¦!")
 }
 
 type QSerialPort struct {
@@ -61,6 +75,16 @@ func NewQSerialPortFromPointer(ptr unsafe.Pointer) (n *QSerialPort) {
 	return
 }
 
+//go:generate stringer -type=QSerialPort__Direction
+//QSerialPort::Direction
+type QSerialPort__Direction int64
+
+const (
+	QSerialPort__Input         QSerialPort__Direction = QSerialPort__Direction(1)
+	QSerialPort__Output        QSerialPort__Direction = QSerialPort__Direction(2)
+	QSerialPort__AllDirections QSerialPort__Direction = QSerialPort__Direction(QSerialPort__Input | QSerialPort__Output)
+)
+
 //go:generate stringer -type=QSerialPort__BaudRate
 //QSerialPort::BaudRate
 type QSerialPort__BaudRate int64
@@ -89,27 +113,6 @@ const (
 	QSerialPort__UnknownDataBits QSerialPort__DataBits = QSerialPort__DataBits(-1)
 )
 
-//go:generate stringer -type=QSerialPort__Direction
-//QSerialPort::Direction
-type QSerialPort__Direction int64
-
-const (
-	QSerialPort__Input         QSerialPort__Direction = QSerialPort__Direction(1)
-	QSerialPort__Output        QSerialPort__Direction = QSerialPort__Direction(2)
-	QSerialPort__AllDirections QSerialPort__Direction = QSerialPort__Direction(QSerialPort__Input | QSerialPort__Output)
-)
-
-//go:generate stringer -type=QSerialPort__FlowControl
-//QSerialPort::FlowControl
-type QSerialPort__FlowControl int64
-
-const (
-	QSerialPort__NoFlowControl      QSerialPort__FlowControl = QSerialPort__FlowControl(0)
-	QSerialPort__HardwareControl    QSerialPort__FlowControl = QSerialPort__FlowControl(1)
-	QSerialPort__SoftwareControl    QSerialPort__FlowControl = QSerialPort__FlowControl(2)
-	QSerialPort__UnknownFlowControl QSerialPort__FlowControl = QSerialPort__FlowControl(-1)
-)
-
 //go:generate stringer -type=QSerialPort__Parity
 //QSerialPort::Parity
 type QSerialPort__Parity int64
@@ -121,6 +124,28 @@ const (
 	QSerialPort__SpaceParity   QSerialPort__Parity = QSerialPort__Parity(4)
 	QSerialPort__MarkParity    QSerialPort__Parity = QSerialPort__Parity(5)
 	QSerialPort__UnknownParity QSerialPort__Parity = QSerialPort__Parity(-1)
+)
+
+//go:generate stringer -type=QSerialPort__StopBits
+//QSerialPort::StopBits
+type QSerialPort__StopBits int64
+
+const (
+	QSerialPort__OneStop         QSerialPort__StopBits = QSerialPort__StopBits(1)
+	QSerialPort__OneAndHalfStop  QSerialPort__StopBits = QSerialPort__StopBits(3)
+	QSerialPort__TwoStop         QSerialPort__StopBits = QSerialPort__StopBits(2)
+	QSerialPort__UnknownStopBits QSerialPort__StopBits = QSerialPort__StopBits(-1)
+)
+
+//go:generate stringer -type=QSerialPort__FlowControl
+//QSerialPort::FlowControl
+type QSerialPort__FlowControl int64
+
+const (
+	QSerialPort__NoFlowControl      QSerialPort__FlowControl = QSerialPort__FlowControl(0)
+	QSerialPort__HardwareControl    QSerialPort__FlowControl = QSerialPort__FlowControl(1)
+	QSerialPort__SoftwareControl    QSerialPort__FlowControl = QSerialPort__FlowControl(2)
+	QSerialPort__UnknownFlowControl QSerialPort__FlowControl = QSerialPort__FlowControl(-1)
 )
 
 //go:generate stringer -type=QSerialPort__PinoutSignal
@@ -162,27 +187,8 @@ const (
 	QSerialPort__NotOpenError              QSerialPort__SerialPortError = QSerialPort__SerialPortError(13)
 )
 
-//go:generate stringer -type=QSerialPort__StopBits
-//QSerialPort::StopBits
-type QSerialPort__StopBits int64
-
-const (
-	QSerialPort__OneStop         QSerialPort__StopBits = QSerialPort__StopBits(1)
-	QSerialPort__OneAndHalfStop  QSerialPort__StopBits = QSerialPort__StopBits(3)
-	QSerialPort__TwoStop         QSerialPort__StopBits = QSerialPort__StopBits(2)
-	QSerialPort__UnknownStopBits QSerialPort__StopBits = QSerialPort__StopBits(-1)
-)
-
 func NewQSerialPort(parent core.QObject_ITF) *QSerialPort {
 	tmpValue := NewQSerialPortFromPointer(C.QSerialPort_NewQSerialPort(core.PointerFromQObject(parent)))
-	if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
-		tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
-	}
-	return tmpValue
-}
-
-func NewQSerialPort3(serialPortInfo QSerialPortInfo_ITF, parent core.QObject_ITF) *QSerialPort {
-	tmpValue := NewQSerialPortFromPointer(C.QSerialPort_NewQSerialPort3(PointerFromQSerialPortInfo(serialPortInfo), core.PointerFromQObject(parent)))
 	if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
 		tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
 	}
@@ -202,93 +208,414 @@ func NewQSerialPort2(name string, parent core.QObject_ITF) *QSerialPort {
 	return tmpValue
 }
 
-func (ptr *QSerialPort) PinoutSignals() QSerialPort__PinoutSignal {
+func NewQSerialPort3(serialPortInfo QSerialPortInfo_ITF, parent core.QObject_ITF) *QSerialPort {
+	tmpValue := NewQSerialPortFromPointer(C.QSerialPort_NewQSerialPort3(PointerFromQSerialPortInfo(serialPortInfo), core.PointerFromQObject(parent)))
+	if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
+		tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
+	}
+	return tmpValue
+}
+
+//export callbackQSerialPort_AtEnd
+func callbackQSerialPort_AtEnd(ptr unsafe.Pointer) C.char {
+	if signal := qt.GetSignal(ptr, "atEnd"); signal != nil {
+		return C.char(int8(qt.GoBoolToInt((*(*func() bool)(signal))())))
+	}
+
+	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).AtEndDefault())))
+}
+
+func (ptr *QSerialPort) AtEndDefault() bool {
 	if ptr.Pointer() != nil {
-		return QSerialPort__PinoutSignal(C.QSerialPort_PinoutSignals(ptr.Pointer()))
-	}
-	return 0
-}
-
-func QSerialPort_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSerialPort_QSerialPort_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QSerialPort) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSerialPort_QSerialPort_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QSerialPort_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSerialPort_QSerialPort_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QSerialPort) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSerialPort_QSerialPort_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QSerialPort) Clear(directions QSerialPort__Direction) bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_Clear(ptr.Pointer(), C.longlong(directions)) != 0
+		return int8(C.QSerialPort_AtEndDefault(ptr.Pointer())) != 0
 	}
 	return false
 }
 
+func (ptr *QSerialPort) BaudRate(directions QSerialPort__Direction) int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QSerialPort_BaudRate(ptr.Pointer(), C.longlong(directions))))
+	}
+	return 0
+}
+
+//export callbackQSerialPort_BaudRateChanged
+func callbackQSerialPort_BaudRateChanged(ptr unsafe.Pointer, baudRate C.int, directions C.longlong) {
+	if signal := qt.GetSignal(ptr, "baudRateChanged"); signal != nil {
+		(*(*func(int, QSerialPort__Direction))(signal))(int(int32(baudRate)), QSerialPort__Direction(directions))
+	}
+
+}
+
+func (ptr *QSerialPort) ConnectBaudRateChanged(f func(baudRate int, directions QSerialPort__Direction)) {
+	if ptr.Pointer() != nil {
+
+		if !qt.ExistsSignal(ptr.Pointer(), "baudRateChanged") {
+			C.QSerialPort_ConnectBaudRateChanged(ptr.Pointer())
+		}
+
+		if signal := qt.LendSignal(ptr.Pointer(), "baudRateChanged"); signal != nil {
+			f := func(baudRate int, directions QSerialPort__Direction) {
+				(*(*func(int, QSerialPort__Direction))(signal))(baudRate, directions)
+				f(baudRate, directions)
+			}
+			qt.ConnectSignal(ptr.Pointer(), "baudRateChanged", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "baudRateChanged", unsafe.Pointer(&f))
+		}
+	}
+}
+
+func (ptr *QSerialPort) DisconnectBaudRateChanged() {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_DisconnectBaudRateChanged(ptr.Pointer())
+		qt.DisconnectSignal(ptr.Pointer(), "baudRateChanged")
+	}
+}
+
+func (ptr *QSerialPort) BaudRateChanged(baudRate int, directions QSerialPort__Direction) {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_BaudRateChanged(ptr.Pointer(), C.int(int32(baudRate)), C.longlong(directions))
+	}
+}
+
+//export callbackQSerialPort_BreakEnabledChanged
+func callbackQSerialPort_BreakEnabledChanged(ptr unsafe.Pointer, set C.char) {
+	if signal := qt.GetSignal(ptr, "breakEnabledChanged"); signal != nil {
+		(*(*func(bool))(signal))(int8(set) != 0)
+	}
+
+}
+
+func (ptr *QSerialPort) ConnectBreakEnabledChanged(f func(set bool)) {
+	if ptr.Pointer() != nil {
+
+		if !qt.ExistsSignal(ptr.Pointer(), "breakEnabledChanged") {
+			C.QSerialPort_ConnectBreakEnabledChanged(ptr.Pointer())
+		}
+
+		if signal := qt.LendSignal(ptr.Pointer(), "breakEnabledChanged"); signal != nil {
+			f := func(set bool) {
+				(*(*func(bool))(signal))(set)
+				f(set)
+			}
+			qt.ConnectSignal(ptr.Pointer(), "breakEnabledChanged", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "breakEnabledChanged", unsafe.Pointer(&f))
+		}
+	}
+}
+
+func (ptr *QSerialPort) DisconnectBreakEnabledChanged() {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_DisconnectBreakEnabledChanged(ptr.Pointer())
+		qt.DisconnectSignal(ptr.Pointer(), "breakEnabledChanged")
+	}
+}
+
+func (ptr *QSerialPort) BreakEnabledChanged(set bool) {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_BreakEnabledChanged(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set))))
+	}
+}
+
+//export callbackQSerialPort_BytesAvailable
+func callbackQSerialPort_BytesAvailable(ptr unsafe.Pointer) C.longlong {
+	if signal := qt.GetSignal(ptr, "bytesAvailable"); signal != nil {
+		return C.longlong((*(*func() int64)(signal))())
+	}
+
+	return C.longlong(NewQSerialPortFromPointer(ptr).BytesAvailableDefault())
+}
+
+func (ptr *QSerialPort) BytesAvailableDefault() int64 {
+	if ptr.Pointer() != nil {
+		return int64(C.QSerialPort_BytesAvailableDefault(ptr.Pointer()))
+	}
+	return 0
+}
+
+//export callbackQSerialPort_BytesToWrite
+func callbackQSerialPort_BytesToWrite(ptr unsafe.Pointer) C.longlong {
+	if signal := qt.GetSignal(ptr, "bytesToWrite"); signal != nil {
+		return C.longlong((*(*func() int64)(signal))())
+	}
+
+	return C.longlong(NewQSerialPortFromPointer(ptr).BytesToWriteDefault())
+}
+
+func (ptr *QSerialPort) BytesToWriteDefault() int64 {
+	if ptr.Pointer() != nil {
+		return int64(C.QSerialPort_BytesToWriteDefault(ptr.Pointer()))
+	}
+	return 0
+}
+
+//export callbackQSerialPort_CanReadLine
+func callbackQSerialPort_CanReadLine(ptr unsafe.Pointer) C.char {
+	if signal := qt.GetSignal(ptr, "canReadLine"); signal != nil {
+		return C.char(int8(qt.GoBoolToInt((*(*func() bool)(signal))())))
+	}
+
+	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).CanReadLineDefault())))
+}
+
+func (ptr *QSerialPort) CanReadLineDefault() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_CanReadLineDefault(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) Clear(directions QSerialPort__Direction) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_Clear(ptr.Pointer(), C.longlong(directions))) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) ClearError() {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_ClearError(ptr.Pointer())
+	}
+}
+
+//export callbackQSerialPort_Close
+func callbackQSerialPort_Close(ptr unsafe.Pointer) {
+	if signal := qt.GetSignal(ptr, "close"); signal != nil {
+		(*(*func())(signal))()
+	} else {
+		NewQSerialPortFromPointer(ptr).CloseDefault()
+	}
+}
+
+func (ptr *QSerialPort) CloseDefault() {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_CloseDefault(ptr.Pointer())
+	}
+}
+
+func (ptr *QSerialPort) DataBits() QSerialPort__DataBits {
+	if ptr.Pointer() != nil {
+		return QSerialPort__DataBits(C.QSerialPort_DataBits(ptr.Pointer()))
+	}
+	return 0
+}
+
+//export callbackQSerialPort_DataBitsChanged
+func callbackQSerialPort_DataBitsChanged(ptr unsafe.Pointer, dataBits C.longlong) {
+	if signal := qt.GetSignal(ptr, "dataBitsChanged"); signal != nil {
+		(*(*func(QSerialPort__DataBits))(signal))(QSerialPort__DataBits(dataBits))
+	}
+
+}
+
+func (ptr *QSerialPort) ConnectDataBitsChanged(f func(dataBits QSerialPort__DataBits)) {
+	if ptr.Pointer() != nil {
+
+		if !qt.ExistsSignal(ptr.Pointer(), "dataBitsChanged") {
+			C.QSerialPort_ConnectDataBitsChanged(ptr.Pointer())
+		}
+
+		if signal := qt.LendSignal(ptr.Pointer(), "dataBitsChanged"); signal != nil {
+			f := func(dataBits QSerialPort__DataBits) {
+				(*(*func(QSerialPort__DataBits))(signal))(dataBits)
+				f(dataBits)
+			}
+			qt.ConnectSignal(ptr.Pointer(), "dataBitsChanged", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "dataBitsChanged", unsafe.Pointer(&f))
+		}
+	}
+}
+
+func (ptr *QSerialPort) DisconnectDataBitsChanged() {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_DisconnectDataBitsChanged(ptr.Pointer())
+		qt.DisconnectSignal(ptr.Pointer(), "dataBitsChanged")
+	}
+}
+
+func (ptr *QSerialPort) DataBitsChanged(dataBits QSerialPort__DataBits) {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_DataBitsChanged(ptr.Pointer(), C.longlong(dataBits))
+	}
+}
+
+//export callbackQSerialPort_DataTerminalReadyChanged
+func callbackQSerialPort_DataTerminalReadyChanged(ptr unsafe.Pointer, set C.char) {
+	if signal := qt.GetSignal(ptr, "dataTerminalReadyChanged"); signal != nil {
+		(*(*func(bool))(signal))(int8(set) != 0)
+	}
+
+}
+
+func (ptr *QSerialPort) ConnectDataTerminalReadyChanged(f func(set bool)) {
+	if ptr.Pointer() != nil {
+
+		if !qt.ExistsSignal(ptr.Pointer(), "dataTerminalReadyChanged") {
+			C.QSerialPort_ConnectDataTerminalReadyChanged(ptr.Pointer())
+		}
+
+		if signal := qt.LendSignal(ptr.Pointer(), "dataTerminalReadyChanged"); signal != nil {
+			f := func(set bool) {
+				(*(*func(bool))(signal))(set)
+				f(set)
+			}
+			qt.ConnectSignal(ptr.Pointer(), "dataTerminalReadyChanged", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "dataTerminalReadyChanged", unsafe.Pointer(&f))
+		}
+	}
+}
+
+func (ptr *QSerialPort) DisconnectDataTerminalReadyChanged() {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_DisconnectDataTerminalReadyChanged(ptr.Pointer())
+		qt.DisconnectSignal(ptr.Pointer(), "dataTerminalReadyChanged")
+	}
+}
+
+func (ptr *QSerialPort) DataTerminalReadyChanged(set bool) {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_DataTerminalReadyChanged(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set))))
+	}
+}
+
+func (ptr *QSerialPort) Error() QSerialPort__SerialPortError {
+	if ptr.Pointer() != nil {
+		return QSerialPort__SerialPortError(C.QSerialPort_Error(ptr.Pointer()))
+	}
+	return 0
+}
+
+//export callbackQSerialPort_ErrorOccurred
+func callbackQSerialPort_ErrorOccurred(ptr unsafe.Pointer, error C.longlong) {
+	if signal := qt.GetSignal(ptr, "errorOccurred"); signal != nil {
+		(*(*func(QSerialPort__SerialPortError))(signal))(QSerialPort__SerialPortError(error))
+	}
+
+}
+
+func (ptr *QSerialPort) ConnectErrorOccurred(f func(error QSerialPort__SerialPortError)) {
+	if ptr.Pointer() != nil {
+
+		if !qt.ExistsSignal(ptr.Pointer(), "errorOccurred") {
+			C.QSerialPort_ConnectErrorOccurred(ptr.Pointer())
+		}
+
+		if signal := qt.LendSignal(ptr.Pointer(), "errorOccurred"); signal != nil {
+			f := func(error QSerialPort__SerialPortError) {
+				(*(*func(QSerialPort__SerialPortError))(signal))(error)
+				f(error)
+			}
+			qt.ConnectSignal(ptr.Pointer(), "errorOccurred", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "errorOccurred", unsafe.Pointer(&f))
+		}
+	}
+}
+
+func (ptr *QSerialPort) DisconnectErrorOccurred() {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_DisconnectErrorOccurred(ptr.Pointer())
+		qt.DisconnectSignal(ptr.Pointer(), "errorOccurred")
+	}
+}
+
+func (ptr *QSerialPort) ErrorOccurred(error QSerialPort__SerialPortError) {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_ErrorOccurred(ptr.Pointer(), C.longlong(error))
+	}
+}
+
+func (ptr *QSerialPort) FlowControl() QSerialPort__FlowControl {
+	if ptr.Pointer() != nil {
+		return QSerialPort__FlowControl(C.QSerialPort_FlowControl(ptr.Pointer()))
+	}
+	return 0
+}
+
+//export callbackQSerialPort_FlowControlChanged
+func callbackQSerialPort_FlowControlChanged(ptr unsafe.Pointer, flow C.longlong) {
+	if signal := qt.GetSignal(ptr, "flowControlChanged"); signal != nil {
+		(*(*func(QSerialPort__FlowControl))(signal))(QSerialPort__FlowControl(flow))
+	}
+
+}
+
+func (ptr *QSerialPort) ConnectFlowControlChanged(f func(flow QSerialPort__FlowControl)) {
+	if ptr.Pointer() != nil {
+
+		if !qt.ExistsSignal(ptr.Pointer(), "flowControlChanged") {
+			C.QSerialPort_ConnectFlowControlChanged(ptr.Pointer())
+		}
+
+		if signal := qt.LendSignal(ptr.Pointer(), "flowControlChanged"); signal != nil {
+			f := func(flow QSerialPort__FlowControl) {
+				(*(*func(QSerialPort__FlowControl))(signal))(flow)
+				f(flow)
+			}
+			qt.ConnectSignal(ptr.Pointer(), "flowControlChanged", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "flowControlChanged", unsafe.Pointer(&f))
+		}
+	}
+}
+
+func (ptr *QSerialPort) DisconnectFlowControlChanged() {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_DisconnectFlowControlChanged(ptr.Pointer())
+		qt.DisconnectSignal(ptr.Pointer(), "flowControlChanged")
+	}
+}
+
+func (ptr *QSerialPort) FlowControlChanged(flow QSerialPort__FlowControl) {
+	if ptr.Pointer() != nil {
+		C.QSerialPort_FlowControlChanged(ptr.Pointer(), C.longlong(flow))
+	}
+}
+
 func (ptr *QSerialPort) Flush() bool {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_Flush(ptr.Pointer()) != 0
+		return int8(C.QSerialPort_Flush(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) IsBreakEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_IsBreakEnabled(ptr.Pointer())) != 0
 	}
 	return false
 }
 
 func (ptr *QSerialPort) IsDataTerminalReady() bool {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_IsDataTerminalReady(ptr.Pointer()) != 0
+		return int8(C.QSerialPort_IsDataTerminalReady(ptr.Pointer())) != 0
 	}
 	return false
 }
 
 func (ptr *QSerialPort) IsRequestToSend() bool {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_IsRequestToSend(ptr.Pointer()) != 0
+		return int8(C.QSerialPort_IsRequestToSend(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+//export callbackQSerialPort_IsSequential
+func callbackQSerialPort_IsSequential(ptr unsafe.Pointer) C.char {
+	if signal := qt.GetSignal(ptr, "isSequential"); signal != nil {
+		return C.char(int8(qt.GoBoolToInt((*(*func() bool)(signal))())))
+	}
+
+	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).IsSequentialDefault())))
+}
+
+func (ptr *QSerialPort) IsSequentialDefault() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_IsSequentialDefault(ptr.Pointer())) != 0
 	}
 	return false
 }
@@ -296,7 +623,7 @@ func (ptr *QSerialPort) IsRequestToSend() bool {
 //export callbackQSerialPort_Open
 func callbackQSerialPort_Open(ptr unsafe.Pointer, mode C.longlong) C.char {
 	if signal := qt.GetSignal(ptr, "open"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func(core.QIODevice__OpenModeFlag) bool)(core.QIODevice__OpenModeFlag(mode)))))
+		return C.char(int8(qt.GoBoolToInt((*(*func(core.QIODevice__OpenModeFlag) bool)(signal))(core.QIODevice__OpenModeFlag(mode)))))
 	}
 
 	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).OpenDefault(core.QIODevice__OpenModeFlag(mode)))))
@@ -304,120 +631,93 @@ func callbackQSerialPort_Open(ptr unsafe.Pointer, mode C.longlong) C.char {
 
 func (ptr *QSerialPort) OpenDefault(mode core.QIODevice__OpenModeFlag) bool {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_OpenDefault(ptr.Pointer(), C.longlong(mode)) != 0
+		return int8(C.QSerialPort_OpenDefault(ptr.Pointer(), C.longlong(mode))) != 0
 	}
 	return false
 }
 
-func (ptr *QSerialPort) SendBreak(duration int) bool {
+func (ptr *QSerialPort) Parity() QSerialPort__Parity {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_SendBreak(ptr.Pointer(), C.int(int32(duration))) != 0
+		return QSerialPort__Parity(C.QSerialPort_Parity(ptr.Pointer()))
 	}
-	return false
+	return 0
 }
 
-func (ptr *QSerialPort) SetBaudRate(baudRate int, directions QSerialPort__Direction) bool {
+//export callbackQSerialPort_ParityChanged
+func callbackQSerialPort_ParityChanged(ptr unsafe.Pointer, parity C.longlong) {
+	if signal := qt.GetSignal(ptr, "parityChanged"); signal != nil {
+		(*(*func(QSerialPort__Parity))(signal))(QSerialPort__Parity(parity))
+	}
+
+}
+
+func (ptr *QSerialPort) ConnectParityChanged(f func(parity QSerialPort__Parity)) {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_SetBaudRate(ptr.Pointer(), C.int(int32(baudRate)), C.longlong(directions)) != 0
+
+		if !qt.ExistsSignal(ptr.Pointer(), "parityChanged") {
+			C.QSerialPort_ConnectParityChanged(ptr.Pointer())
+		}
+
+		if signal := qt.LendSignal(ptr.Pointer(), "parityChanged"); signal != nil {
+			f := func(parity QSerialPort__Parity) {
+				(*(*func(QSerialPort__Parity))(signal))(parity)
+				f(parity)
+			}
+			qt.ConnectSignal(ptr.Pointer(), "parityChanged", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "parityChanged", unsafe.Pointer(&f))
+		}
 	}
-	return false
 }
 
-func (ptr *QSerialPort) SetBreakEnabled(set bool) bool {
+func (ptr *QSerialPort) DisconnectParityChanged() {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_SetBreakEnabled(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set)))) != 0
+		C.QSerialPort_DisconnectParityChanged(ptr.Pointer())
+		qt.DisconnectSignal(ptr.Pointer(), "parityChanged")
 	}
-	return false
 }
 
-func (ptr *QSerialPort) SetDataBits(dataBits QSerialPort__DataBits) bool {
+func (ptr *QSerialPort) ParityChanged(parity QSerialPort__Parity) {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_SetDataBits(ptr.Pointer(), C.longlong(dataBits)) != 0
+		C.QSerialPort_ParityChanged(ptr.Pointer(), C.longlong(parity))
 	}
-	return false
 }
 
-func (ptr *QSerialPort) SetDataTerminalReady(set bool) bool {
+func (ptr *QSerialPort) PinoutSignals() QSerialPort__PinoutSignal {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_SetDataTerminalReady(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set)))) != 0
+		return QSerialPort__PinoutSignal(C.QSerialPort_PinoutSignals(ptr.Pointer()))
 	}
-	return false
+	return 0
 }
 
-func (ptr *QSerialPort) SetFlowControl(flowControl QSerialPort__FlowControl) bool {
+func (ptr *QSerialPort) PortName() string {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_SetFlowControl(ptr.Pointer(), C.longlong(flowControl)) != 0
+		return cGoUnpackString(C.QSerialPort_PortName(ptr.Pointer()))
 	}
-	return false
+	return ""
 }
 
-func (ptr *QSerialPort) SetParity(parity QSerialPort__Parity) bool {
+func (ptr *QSerialPort) ReadBufferSize() int64 {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_SetParity(ptr.Pointer(), C.longlong(parity)) != 0
+		return int64(C.QSerialPort_ReadBufferSize(ptr.Pointer()))
 	}
-	return false
-}
-
-func (ptr *QSerialPort) SetRequestToSend(set bool) bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_SetRequestToSend(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set)))) != 0
-	}
-	return false
-}
-
-func (ptr *QSerialPort) SetStopBits(stopBits QSerialPort__StopBits) bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_SetStopBits(ptr.Pointer(), C.longlong(stopBits)) != 0
-	}
-	return false
-}
-
-//export callbackQSerialPort_WaitForBytesWritten
-func callbackQSerialPort_WaitForBytesWritten(ptr unsafe.Pointer, msecs C.int) C.char {
-	if signal := qt.GetSignal(ptr, "waitForBytesWritten"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func(int) bool)(int(int32(msecs))))))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).WaitForBytesWrittenDefault(int(int32(msecs))))))
-}
-
-func (ptr *QSerialPort) WaitForBytesWrittenDefault(msecs int) bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_WaitForBytesWrittenDefault(ptr.Pointer(), C.int(int32(msecs))) != 0
-	}
-	return false
-}
-
-//export callbackQSerialPort_WaitForReadyRead
-func callbackQSerialPort_WaitForReadyRead(ptr unsafe.Pointer, msecs C.int) C.char {
-	if signal := qt.GetSignal(ptr, "waitForReadyRead"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func(int) bool)(int(int32(msecs))))))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).WaitForReadyReadDefault(int(int32(msecs))))))
-}
-
-func (ptr *QSerialPort) WaitForReadyReadDefault(msecs int) bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_WaitForReadyReadDefault(ptr.Pointer(), C.int(int32(msecs))) != 0
-	}
-	return false
+	return 0
 }
 
 //export callbackQSerialPort_ReadData
 func callbackQSerialPort_ReadData(ptr unsafe.Pointer, data C.struct_QtSerialPort_PackedString, maxSize C.longlong) C.longlong {
 	if signal := qt.GetSignal(ptr, "readData"); signal != nil {
 		retS := cGoUnpackString(data)
-		ret := C.longlong(signal.(func(*string, int64) int64)(&retS, int64(maxSize)))
+		ret := C.longlong((*(*func(*string, int64) int64)(signal))(&retS, int64(maxSize)))
 		if ret > 0 {
-			C.memcpy(unsafe.Pointer(data.data), unsafe.Pointer(C.CString(retS)), C.size_t(ret))
+			C.memcpy(unsafe.Pointer(data.data), unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&retS)).Data), C.size_t(ret))
 		}
 		return ret
 	}
 	retS := cGoUnpackString(data)
 	ret := C.longlong(NewQSerialPortFromPointer(ptr).ReadDataDefault(&retS, int64(maxSize)))
 	if ret > 0 {
-		C.memcpy(unsafe.Pointer(data.data), unsafe.Pointer(C.CString(retS)), C.size_t(ret))
+		C.memcpy(unsafe.Pointer(data.data), unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&retS)).Data), C.size_t(ret))
 	}
 	return ret
 }
@@ -426,12 +726,13 @@ func (ptr *QSerialPort) ConnectReadData(f func(data *string, maxSize int64) int6
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "readData"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "readData", func(data *string, maxSize int64) int64 {
-				signal.(func(*string, int64) int64)(data, maxSize)
+			f := func(data *string, maxSize int64) int64 {
+				(*(*func(*string, int64) int64)(signal))(data, maxSize)
 				return f(data, maxSize)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "readData", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "readData", f)
+			qt.ConnectSignal(ptr.Pointer(), "readData", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -472,376 +773,27 @@ func (ptr *QSerialPort) ReadDataDefault(data *string, maxSize int64) int64 {
 //export callbackQSerialPort_ReadLineData
 func callbackQSerialPort_ReadLineData(ptr unsafe.Pointer, data C.struct_QtSerialPort_PackedString, maxSize C.longlong) C.longlong {
 	if signal := qt.GetSignal(ptr, "readLineData"); signal != nil {
-		return C.longlong(signal.(func(string, int64) int64)(cGoUnpackString(data), int64(maxSize)))
+		return C.longlong((*(*func([]byte, int64) int64)(signal))(cGoUnpackBytes(data), int64(maxSize)))
 	}
 
-	return C.longlong(NewQSerialPortFromPointer(ptr).ReadLineDataDefault(cGoUnpackString(data), int64(maxSize)))
+	return C.longlong(NewQSerialPortFromPointer(ptr).ReadLineDataDefault(cGoUnpackBytes(data), int64(maxSize)))
 }
 
-func (ptr *QSerialPort) ReadLineDataDefault(data string, maxSize int64) int64 {
+func (ptr *QSerialPort) ReadLineDataDefault(data []byte, maxSize int64) int64 {
 	if ptr.Pointer() != nil {
 		var dataC *C.char
-		if data != "" {
-			dataC = C.CString(data)
-			defer C.free(unsafe.Pointer(dataC))
+		if len(data) != 0 {
+			dataC = (*C.char)(unsafe.Pointer(&data[0]))
 		}
 		return int64(C.QSerialPort_ReadLineDataDefault(ptr.Pointer(), dataC, C.longlong(maxSize)))
 	}
 	return 0
 }
 
-//export callbackQSerialPort_WriteData
-func callbackQSerialPort_WriteData(ptr unsafe.Pointer, data C.struct_QtSerialPort_PackedString, maxSize C.longlong) C.longlong {
-	if signal := qt.GetSignal(ptr, "writeData"); signal != nil {
-		return C.longlong(signal.(func(string, int64) int64)(cGoUnpackString(data), int64(maxSize)))
-	}
-
-	return C.longlong(NewQSerialPortFromPointer(ptr).WriteDataDefault(cGoUnpackString(data), int64(maxSize)))
-}
-
-func (ptr *QSerialPort) ConnectWriteData(f func(data string, maxSize int64) int64) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "writeData"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "writeData", func(data string, maxSize int64) int64 {
-				signal.(func(string, int64) int64)(data, maxSize)
-				return f(data, maxSize)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "writeData", f)
-		}
-	}
-}
-
-func (ptr *QSerialPort) DisconnectWriteData() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "writeData")
-	}
-}
-
-func (ptr *QSerialPort) WriteData(data string, maxSize int64) int64 {
-	if ptr.Pointer() != nil {
-		var dataC *C.char
-		if data != "" {
-			dataC = C.CString(data)
-			defer C.free(unsafe.Pointer(dataC))
-		}
-		return int64(C.QSerialPort_WriteData(ptr.Pointer(), dataC, C.longlong(maxSize)))
-	}
-	return 0
-}
-
-func (ptr *QSerialPort) WriteDataDefault(data string, maxSize int64) int64 {
-	if ptr.Pointer() != nil {
-		var dataC *C.char
-		if data != "" {
-			dataC = C.CString(data)
-			defer C.free(unsafe.Pointer(dataC))
-		}
-		return int64(C.QSerialPort_WriteDataDefault(ptr.Pointer(), dataC, C.longlong(maxSize)))
-	}
-	return 0
-}
-
-//export callbackQSerialPort_BaudRateChanged
-func callbackQSerialPort_BaudRateChanged(ptr unsafe.Pointer, baudRate C.int, directions C.longlong) {
-	if signal := qt.GetSignal(ptr, "baudRateChanged"); signal != nil {
-		signal.(func(int, QSerialPort__Direction))(int(int32(baudRate)), QSerialPort__Direction(directions))
-	}
-
-}
-
-func (ptr *QSerialPort) ConnectBaudRateChanged(f func(baudRate int, directions QSerialPort__Direction)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "baudRateChanged") {
-			C.QSerialPort_ConnectBaudRateChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "baudRateChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "baudRateChanged", func(baudRate int, directions QSerialPort__Direction) {
-				signal.(func(int, QSerialPort__Direction))(baudRate, directions)
-				f(baudRate, directions)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "baudRateChanged", f)
-		}
-	}
-}
-
-func (ptr *QSerialPort) DisconnectBaudRateChanged() {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_DisconnectBaudRateChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "baudRateChanged")
-	}
-}
-
-func (ptr *QSerialPort) BaudRateChanged(baudRate int, directions QSerialPort__Direction) {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_BaudRateChanged(ptr.Pointer(), C.int(int32(baudRate)), C.longlong(directions))
-	}
-}
-
-//export callbackQSerialPort_BreakEnabledChanged
-func callbackQSerialPort_BreakEnabledChanged(ptr unsafe.Pointer, set C.char) {
-	if signal := qt.GetSignal(ptr, "breakEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(set) != 0)
-	}
-
-}
-
-func (ptr *QSerialPort) ConnectBreakEnabledChanged(f func(set bool)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "breakEnabledChanged") {
-			C.QSerialPort_ConnectBreakEnabledChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "breakEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "breakEnabledChanged", func(set bool) {
-				signal.(func(bool))(set)
-				f(set)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "breakEnabledChanged", f)
-		}
-	}
-}
-
-func (ptr *QSerialPort) DisconnectBreakEnabledChanged() {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_DisconnectBreakEnabledChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "breakEnabledChanged")
-	}
-}
-
-func (ptr *QSerialPort) BreakEnabledChanged(set bool) {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_BreakEnabledChanged(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set))))
-	}
-}
-
-func (ptr *QSerialPort) ClearError() {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_ClearError(ptr.Pointer())
-	}
-}
-
-//export callbackQSerialPort_Close
-func callbackQSerialPort_Close(ptr unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "close"); signal != nil {
-		signal.(func())()
-	} else {
-		NewQSerialPortFromPointer(ptr).CloseDefault()
-	}
-}
-
-func (ptr *QSerialPort) CloseDefault() {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_CloseDefault(ptr.Pointer())
-	}
-}
-
-//export callbackQSerialPort_DataBitsChanged
-func callbackQSerialPort_DataBitsChanged(ptr unsafe.Pointer, dataBits C.longlong) {
-	if signal := qt.GetSignal(ptr, "dataBitsChanged"); signal != nil {
-		signal.(func(QSerialPort__DataBits))(QSerialPort__DataBits(dataBits))
-	}
-
-}
-
-func (ptr *QSerialPort) ConnectDataBitsChanged(f func(dataBits QSerialPort__DataBits)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "dataBitsChanged") {
-			C.QSerialPort_ConnectDataBitsChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "dataBitsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "dataBitsChanged", func(dataBits QSerialPort__DataBits) {
-				signal.(func(QSerialPort__DataBits))(dataBits)
-				f(dataBits)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "dataBitsChanged", f)
-		}
-	}
-}
-
-func (ptr *QSerialPort) DisconnectDataBitsChanged() {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_DisconnectDataBitsChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "dataBitsChanged")
-	}
-}
-
-func (ptr *QSerialPort) DataBitsChanged(dataBits QSerialPort__DataBits) {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_DataBitsChanged(ptr.Pointer(), C.longlong(dataBits))
-	}
-}
-
-//export callbackQSerialPort_DataTerminalReadyChanged
-func callbackQSerialPort_DataTerminalReadyChanged(ptr unsafe.Pointer, set C.char) {
-	if signal := qt.GetSignal(ptr, "dataTerminalReadyChanged"); signal != nil {
-		signal.(func(bool))(int8(set) != 0)
-	}
-
-}
-
-func (ptr *QSerialPort) ConnectDataTerminalReadyChanged(f func(set bool)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "dataTerminalReadyChanged") {
-			C.QSerialPort_ConnectDataTerminalReadyChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "dataTerminalReadyChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "dataTerminalReadyChanged", func(set bool) {
-				signal.(func(bool))(set)
-				f(set)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "dataTerminalReadyChanged", f)
-		}
-	}
-}
-
-func (ptr *QSerialPort) DisconnectDataTerminalReadyChanged() {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_DisconnectDataTerminalReadyChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "dataTerminalReadyChanged")
-	}
-}
-
-func (ptr *QSerialPort) DataTerminalReadyChanged(set bool) {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_DataTerminalReadyChanged(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set))))
-	}
-}
-
-//export callbackQSerialPort_ErrorOccurred
-func callbackQSerialPort_ErrorOccurred(ptr unsafe.Pointer, error C.longlong) {
-	if signal := qt.GetSignal(ptr, "errorOccurred"); signal != nil {
-		signal.(func(QSerialPort__SerialPortError))(QSerialPort__SerialPortError(error))
-	}
-
-}
-
-func (ptr *QSerialPort) ConnectErrorOccurred(f func(error QSerialPort__SerialPortError)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "errorOccurred") {
-			C.QSerialPort_ConnectErrorOccurred(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "errorOccurred"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "errorOccurred", func(error QSerialPort__SerialPortError) {
-				signal.(func(QSerialPort__SerialPortError))(error)
-				f(error)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "errorOccurred", f)
-		}
-	}
-}
-
-func (ptr *QSerialPort) DisconnectErrorOccurred() {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_DisconnectErrorOccurred(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "errorOccurred")
-	}
-}
-
-func (ptr *QSerialPort) ErrorOccurred(error QSerialPort__SerialPortError) {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_ErrorOccurred(ptr.Pointer(), C.longlong(error))
-	}
-}
-
-//export callbackQSerialPort_FlowControlChanged
-func callbackQSerialPort_FlowControlChanged(ptr unsafe.Pointer, flow C.longlong) {
-	if signal := qt.GetSignal(ptr, "flowControlChanged"); signal != nil {
-		signal.(func(QSerialPort__FlowControl))(QSerialPort__FlowControl(flow))
-	}
-
-}
-
-func (ptr *QSerialPort) ConnectFlowControlChanged(f func(flow QSerialPort__FlowControl)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "flowControlChanged") {
-			C.QSerialPort_ConnectFlowControlChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "flowControlChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "flowControlChanged", func(flow QSerialPort__FlowControl) {
-				signal.(func(QSerialPort__FlowControl))(flow)
-				f(flow)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "flowControlChanged", f)
-		}
-	}
-}
-
-func (ptr *QSerialPort) DisconnectFlowControlChanged() {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_DisconnectFlowControlChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "flowControlChanged")
-	}
-}
-
-func (ptr *QSerialPort) FlowControlChanged(flow QSerialPort__FlowControl) {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_FlowControlChanged(ptr.Pointer(), C.longlong(flow))
-	}
-}
-
-//export callbackQSerialPort_ParityChanged
-func callbackQSerialPort_ParityChanged(ptr unsafe.Pointer, parity C.longlong) {
-	if signal := qt.GetSignal(ptr, "parityChanged"); signal != nil {
-		signal.(func(QSerialPort__Parity))(QSerialPort__Parity(parity))
-	}
-
-}
-
-func (ptr *QSerialPort) ConnectParityChanged(f func(parity QSerialPort__Parity)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "parityChanged") {
-			C.QSerialPort_ConnectParityChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "parityChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "parityChanged", func(parity QSerialPort__Parity) {
-				signal.(func(QSerialPort__Parity))(parity)
-				f(parity)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "parityChanged", f)
-		}
-	}
-}
-
-func (ptr *QSerialPort) DisconnectParityChanged() {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_DisconnectParityChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "parityChanged")
-	}
-}
-
-func (ptr *QSerialPort) ParityChanged(parity QSerialPort__Parity) {
-	if ptr.Pointer() != nil {
-		C.QSerialPort_ParityChanged(ptr.Pointer(), C.longlong(parity))
-	}
-}
-
 //export callbackQSerialPort_RequestToSendChanged
 func callbackQSerialPort_RequestToSendChanged(ptr unsafe.Pointer, set C.char) {
 	if signal := qt.GetSignal(ptr, "requestToSendChanged"); signal != nil {
-		signal.(func(bool))(int8(set) != 0)
+		(*(*func(bool))(signal))(int8(set) != 0)
 	}
 
 }
@@ -854,12 +806,13 @@ func (ptr *QSerialPort) ConnectRequestToSendChanged(f func(set bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "requestToSendChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "requestToSendChanged", func(set bool) {
-				signal.(func(bool))(set)
+			f := func(set bool) {
+				(*(*func(bool))(signal))(set)
 				f(set)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "requestToSendChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "requestToSendChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "requestToSendChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -875,6 +828,55 @@ func (ptr *QSerialPort) RequestToSendChanged(set bool) {
 	if ptr.Pointer() != nil {
 		C.QSerialPort_RequestToSendChanged(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set))))
 	}
+}
+
+func (ptr *QSerialPort) SendBreak(duration int) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SendBreak(ptr.Pointer(), C.int(int32(duration)))) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) SetBaudRate(baudRate int, directions QSerialPort__Direction) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SetBaudRate(ptr.Pointer(), C.int(int32(baudRate)), C.longlong(directions))) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) SetBreakEnabled(set bool) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SetBreakEnabled(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set))))) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) SetDataBits(dataBits QSerialPort__DataBits) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SetDataBits(ptr.Pointer(), C.longlong(dataBits))) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) SetDataTerminalReady(set bool) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SetDataTerminalReady(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set))))) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) SetFlowControl(flowControl QSerialPort__FlowControl) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SetFlowControl(ptr.Pointer(), C.longlong(flowControl))) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) SetParity(parity QSerialPort__Parity) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SetParity(ptr.Pointer(), C.longlong(parity))) != 0
+	}
+	return false
 }
 
 func (ptr *QSerialPort) SetPort(serialPortInfo QSerialPortInfo_ITF) {
@@ -900,16 +902,44 @@ func (ptr *QSerialPort) SetReadBufferSize(size int64) {
 	}
 }
 
+func (ptr *QSerialPort) SetRequestToSend(set bool) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SetRequestToSend(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(set))))) != 0
+	}
+	return false
+}
+
 func (ptr *QSerialPort) SetSettingsRestoredOnClose(restore bool) {
 	if ptr.Pointer() != nil {
 		C.QSerialPort_SetSettingsRestoredOnClose(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(restore))))
 	}
 }
 
+func (ptr *QSerialPort) SetStopBits(stopBits QSerialPort__StopBits) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SetStopBits(ptr.Pointer(), C.longlong(stopBits))) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) SettingsRestoredOnClose() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SettingsRestoredOnClose(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPort) StopBits() QSerialPort__StopBits {
+	if ptr.Pointer() != nil {
+		return QSerialPort__StopBits(C.QSerialPort_StopBits(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQSerialPort_StopBitsChanged
 func callbackQSerialPort_StopBitsChanged(ptr unsafe.Pointer, stopBits C.longlong) {
 	if signal := qt.GetSignal(ptr, "stopBitsChanged"); signal != nil {
-		signal.(func(QSerialPort__StopBits))(QSerialPort__StopBits(stopBits))
+		(*(*func(QSerialPort__StopBits))(signal))(QSerialPort__StopBits(stopBits))
 	}
 
 }
@@ -922,12 +952,13 @@ func (ptr *QSerialPort) ConnectStopBitsChanged(f func(stopBits QSerialPort__Stop
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "stopBitsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "stopBitsChanged", func(stopBits QSerialPort__StopBits) {
-				signal.(func(QSerialPort__StopBits))(stopBits)
+			f := func(stopBits QSerialPort__StopBits) {
+				(*(*func(QSerialPort__StopBits))(signal))(stopBits)
 				f(stopBits)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "stopBitsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "stopBitsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "stopBitsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -945,10 +976,95 @@ func (ptr *QSerialPort) StopBitsChanged(stopBits QSerialPort__StopBits) {
 	}
 }
 
+//export callbackQSerialPort_WaitForBytesWritten
+func callbackQSerialPort_WaitForBytesWritten(ptr unsafe.Pointer, msecs C.int) C.char {
+	if signal := qt.GetSignal(ptr, "waitForBytesWritten"); signal != nil {
+		return C.char(int8(qt.GoBoolToInt((*(*func(int) bool)(signal))(int(int32(msecs))))))
+	}
+
+	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).WaitForBytesWrittenDefault(int(int32(msecs))))))
+}
+
+func (ptr *QSerialPort) WaitForBytesWrittenDefault(msecs int) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_WaitForBytesWrittenDefault(ptr.Pointer(), C.int(int32(msecs)))) != 0
+	}
+	return false
+}
+
+//export callbackQSerialPort_WaitForReadyRead
+func callbackQSerialPort_WaitForReadyRead(ptr unsafe.Pointer, msecs C.int) C.char {
+	if signal := qt.GetSignal(ptr, "waitForReadyRead"); signal != nil {
+		return C.char(int8(qt.GoBoolToInt((*(*func(int) bool)(signal))(int(int32(msecs))))))
+	}
+
+	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).WaitForReadyReadDefault(int(int32(msecs))))))
+}
+
+func (ptr *QSerialPort) WaitForReadyReadDefault(msecs int) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_WaitForReadyReadDefault(ptr.Pointer(), C.int(int32(msecs)))) != 0
+	}
+	return false
+}
+
+//export callbackQSerialPort_WriteData
+func callbackQSerialPort_WriteData(ptr unsafe.Pointer, data C.struct_QtSerialPort_PackedString, maxSize C.longlong) C.longlong {
+	if signal := qt.GetSignal(ptr, "writeData"); signal != nil {
+		return C.longlong((*(*func([]byte, int64) int64)(signal))(cGoUnpackBytes(data), int64(maxSize)))
+	}
+
+	return C.longlong(NewQSerialPortFromPointer(ptr).WriteDataDefault(cGoUnpackBytes(data), int64(maxSize)))
+}
+
+func (ptr *QSerialPort) ConnectWriteData(f func(data []byte, maxSize int64) int64) {
+	if ptr.Pointer() != nil {
+
+		if signal := qt.LendSignal(ptr.Pointer(), "writeData"); signal != nil {
+			f := func(data []byte, maxSize int64) int64 {
+				(*(*func([]byte, int64) int64)(signal))(data, maxSize)
+				return f(data, maxSize)
+			}
+			qt.ConnectSignal(ptr.Pointer(), "writeData", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "writeData", unsafe.Pointer(&f))
+		}
+	}
+}
+
+func (ptr *QSerialPort) DisconnectWriteData() {
+	if ptr.Pointer() != nil {
+
+		qt.DisconnectSignal(ptr.Pointer(), "writeData")
+	}
+}
+
+func (ptr *QSerialPort) WriteData(data []byte, maxSize int64) int64 {
+	if ptr.Pointer() != nil {
+		var dataC *C.char
+		if len(data) != 0 {
+			dataC = (*C.char)(unsafe.Pointer(&data[0]))
+		}
+		return int64(C.QSerialPort_WriteData(ptr.Pointer(), dataC, C.longlong(maxSize)))
+	}
+	return 0
+}
+
+func (ptr *QSerialPort) WriteDataDefault(data []byte, maxSize int64) int64 {
+	if ptr.Pointer() != nil {
+		var dataC *C.char
+		if len(data) != 0 {
+			dataC = (*C.char)(unsafe.Pointer(&data[0]))
+		}
+		return int64(C.QSerialPort_WriteDataDefault(ptr.Pointer(), dataC, C.longlong(maxSize)))
+	}
+	return 0
+}
+
 //export callbackQSerialPort_DestroyQSerialPort
 func callbackQSerialPort_DestroyQSerialPort(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QSerialPort"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQSerialPortFromPointer(ptr).DestroyQSerialPortDefault()
 	}
@@ -958,12 +1074,13 @@ func (ptr *QSerialPort) ConnectDestroyQSerialPort(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QSerialPort"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QSerialPort", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QSerialPort", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QSerialPort", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QSerialPort", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -991,170 +1108,25 @@ func (ptr *QSerialPort) DestroyQSerialPortDefault() {
 	}
 }
 
-func (ptr *QSerialPort) DataBits() QSerialPort__DataBits {
+func (ptr *QSerialPort) __children_atList(i int) *core.QObject {
 	if ptr.Pointer() != nil {
-		return QSerialPort__DataBits(C.QSerialPort_DataBits(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QSerialPort) FlowControl() QSerialPort__FlowControl {
-	if ptr.Pointer() != nil {
-		return QSerialPort__FlowControl(C.QSerialPort_FlowControl(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QSerialPort) Parity() QSerialPort__Parity {
-	if ptr.Pointer() != nil {
-		return QSerialPort__Parity(C.QSerialPort_Parity(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QSerialPort) Error() QSerialPort__SerialPortError {
-	if ptr.Pointer() != nil {
-		return QSerialPort__SerialPortError(C.QSerialPort_Error(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QSerialPort) StopBits() QSerialPort__StopBits {
-	if ptr.Pointer() != nil {
-		return QSerialPort__StopBits(C.QSerialPort_StopBits(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QSerialPort) PortName() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QSerialPort_PortName(ptr.Pointer()))
-	}
-	return ""
-}
-
-//export callbackQSerialPort_AtEnd
-func callbackQSerialPort_AtEnd(ptr unsafe.Pointer) C.char {
-	if signal := qt.GetSignal(ptr, "atEnd"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func() bool)())))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).AtEndDefault())))
-}
-
-func (ptr *QSerialPort) AtEndDefault() bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_AtEndDefault(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQSerialPort_CanReadLine
-func callbackQSerialPort_CanReadLine(ptr unsafe.Pointer) C.char {
-	if signal := qt.GetSignal(ptr, "canReadLine"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func() bool)())))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).CanReadLineDefault())))
-}
-
-func (ptr *QSerialPort) CanReadLineDefault() bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_CanReadLineDefault(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QSerialPort) IsBreakEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_IsBreakEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQSerialPort_IsSequential
-func callbackQSerialPort_IsSequential(ptr unsafe.Pointer) C.char {
-	if signal := qt.GetSignal(ptr, "isSequential"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func() bool)())))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).IsSequentialDefault())))
-}
-
-func (ptr *QSerialPort) IsSequentialDefault() bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_IsSequentialDefault(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QSerialPort) SettingsRestoredOnClose() bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_SettingsRestoredOnClose(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQSerialPort_MetaObject
-func callbackQSerialPort_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQSerialPortFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QSerialPort) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QSerialPort_MetaObjectDefault(ptr.Pointer()))
+		tmpValue := core.NewQObjectFromPointer(C.QSerialPort___children_atList(ptr.Pointer(), C.int(int32(i))))
+		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
+			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
+		}
+		return tmpValue
 	}
 	return nil
 }
 
-func (ptr *QSerialPort) BaudRate(directions QSerialPort__Direction) int {
+func (ptr *QSerialPort) __children_setList(i core.QObject_ITF) {
 	if ptr.Pointer() != nil {
-		return int(int32(C.QSerialPort_BaudRate(ptr.Pointer(), C.longlong(directions))))
+		C.QSerialPort___children_setList(ptr.Pointer(), core.PointerFromQObject(i))
 	}
-	return 0
 }
 
-//export callbackQSerialPort_BytesAvailable
-func callbackQSerialPort_BytesAvailable(ptr unsafe.Pointer) C.longlong {
-	if signal := qt.GetSignal(ptr, "bytesAvailable"); signal != nil {
-		return C.longlong(signal.(func() int64)())
-	}
-
-	return C.longlong(NewQSerialPortFromPointer(ptr).BytesAvailableDefault())
-}
-
-func (ptr *QSerialPort) BytesAvailableDefault() int64 {
-	if ptr.Pointer() != nil {
-		return int64(C.QSerialPort_BytesAvailableDefault(ptr.Pointer()))
-	}
-	return 0
-}
-
-//export callbackQSerialPort_BytesToWrite
-func callbackQSerialPort_BytesToWrite(ptr unsafe.Pointer) C.longlong {
-	if signal := qt.GetSignal(ptr, "bytesToWrite"); signal != nil {
-		return C.longlong(signal.(func() int64)())
-	}
-
-	return C.longlong(NewQSerialPortFromPointer(ptr).BytesToWriteDefault())
-}
-
-func (ptr *QSerialPort) BytesToWriteDefault() int64 {
-	if ptr.Pointer() != nil {
-		return int64(C.QSerialPort_BytesToWriteDefault(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QSerialPort) ReadBufferSize() int64 {
-	if ptr.Pointer() != nil {
-		return int64(C.QSerialPort_ReadBufferSize(ptr.Pointer()))
-	}
-	return 0
+func (ptr *QSerialPort) __children_newList() unsafe.Pointer {
+	return C.QSerialPort___children_newList(ptr.Pointer())
 }
 
 func (ptr *QSerialPort) __dynamicPropertyNames_atList(i int) *core.QByteArray {
@@ -1174,48 +1146,6 @@ func (ptr *QSerialPort) __dynamicPropertyNames_setList(i core.QByteArray_ITF) {
 
 func (ptr *QSerialPort) __dynamicPropertyNames_newList() unsafe.Pointer {
 	return C.QSerialPort___dynamicPropertyNames_newList(ptr.Pointer())
-}
-
-func (ptr *QSerialPort) __findChildren_atList2(i int) *core.QObject {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQObjectFromPointer(C.QSerialPort___findChildren_atList2(ptr.Pointer(), C.int(int32(i))))
-		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
-			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
-		}
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QSerialPort) __findChildren_setList2(i core.QObject_ITF) {
-	if ptr.Pointer() != nil {
-		C.QSerialPort___findChildren_setList2(ptr.Pointer(), core.PointerFromQObject(i))
-	}
-}
-
-func (ptr *QSerialPort) __findChildren_newList2() unsafe.Pointer {
-	return C.QSerialPort___findChildren_newList2(ptr.Pointer())
-}
-
-func (ptr *QSerialPort) __findChildren_atList3(i int) *core.QObject {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQObjectFromPointer(C.QSerialPort___findChildren_atList3(ptr.Pointer(), C.int(int32(i))))
-		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
-			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
-		}
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QSerialPort) __findChildren_setList3(i core.QObject_ITF) {
-	if ptr.Pointer() != nil {
-		C.QSerialPort___findChildren_setList3(ptr.Pointer(), core.PointerFromQObject(i))
-	}
-}
-
-func (ptr *QSerialPort) __findChildren_newList3() unsafe.Pointer {
-	return C.QSerialPort___findChildren_newList3(ptr.Pointer())
 }
 
 func (ptr *QSerialPort) __findChildren_atList(i int) *core.QObject {
@@ -1239,9 +1169,9 @@ func (ptr *QSerialPort) __findChildren_newList() unsafe.Pointer {
 	return C.QSerialPort___findChildren_newList(ptr.Pointer())
 }
 
-func (ptr *QSerialPort) __children_atList(i int) *core.QObject {
+func (ptr *QSerialPort) __findChildren_atList3(i int) *core.QObject {
 	if ptr.Pointer() != nil {
-		tmpValue := core.NewQObjectFromPointer(C.QSerialPort___children_atList(ptr.Pointer(), C.int(int32(i))))
+		tmpValue := core.NewQObjectFromPointer(C.QSerialPort___findChildren_atList3(ptr.Pointer(), C.int(int32(i))))
 		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
 			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
 		}
@@ -1250,52 +1180,41 @@ func (ptr *QSerialPort) __children_atList(i int) *core.QObject {
 	return nil
 }
 
-func (ptr *QSerialPort) __children_setList(i core.QObject_ITF) {
+func (ptr *QSerialPort) __findChildren_setList3(i core.QObject_ITF) {
 	if ptr.Pointer() != nil {
-		C.QSerialPort___children_setList(ptr.Pointer(), core.PointerFromQObject(i))
+		C.QSerialPort___findChildren_setList3(ptr.Pointer(), core.PointerFromQObject(i))
 	}
 }
 
-func (ptr *QSerialPort) __children_newList() unsafe.Pointer {
-	return C.QSerialPort___children_newList(ptr.Pointer())
+func (ptr *QSerialPort) __findChildren_newList3() unsafe.Pointer {
+	return C.QSerialPort___findChildren_newList3(ptr.Pointer())
 }
 
-//export callbackQSerialPort_Reset
-func callbackQSerialPort_Reset(ptr unsafe.Pointer) C.char {
-	if signal := qt.GetSignal(ptr, "reset"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func() bool)())))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).ResetDefault())))
-}
-
-func (ptr *QSerialPort) ResetDefault() bool {
+func (ptr *QSerialPort) __qFindChildren_atList2(i int) *core.QObject {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_ResetDefault(ptr.Pointer()) != 0
+		tmpValue := core.NewQObjectFromPointer(C.QSerialPort___qFindChildren_atList2(ptr.Pointer(), C.int(int32(i))))
+		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
+			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
+		}
+		return tmpValue
 	}
-	return false
+	return nil
 }
 
-//export callbackQSerialPort_Seek
-func callbackQSerialPort_Seek(ptr unsafe.Pointer, pos C.longlong) C.char {
-	if signal := qt.GetSignal(ptr, "seek"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func(int64) bool)(int64(pos)))))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).SeekDefault(int64(pos)))))
-}
-
-func (ptr *QSerialPort) SeekDefault(pos int64) bool {
+func (ptr *QSerialPort) __qFindChildren_setList2(i core.QObject_ITF) {
 	if ptr.Pointer() != nil {
-		return C.QSerialPort_SeekDefault(ptr.Pointer(), C.longlong(pos)) != 0
+		C.QSerialPort___qFindChildren_setList2(ptr.Pointer(), core.PointerFromQObject(i))
 	}
-	return false
+}
+
+func (ptr *QSerialPort) __qFindChildren_newList2() unsafe.Pointer {
+	return C.QSerialPort___qFindChildren_newList2(ptr.Pointer())
 }
 
 //export callbackQSerialPort_AboutToClose
 func callbackQSerialPort_AboutToClose(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "aboutToClose"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -1303,7 +1222,7 @@ func callbackQSerialPort_AboutToClose(ptr unsafe.Pointer) {
 //export callbackQSerialPort_BytesWritten
 func callbackQSerialPort_BytesWritten(ptr unsafe.Pointer, bytes C.longlong) {
 	if signal := qt.GetSignal(ptr, "bytesWritten"); signal != nil {
-		signal.(func(int64))(int64(bytes))
+		(*(*func(int64))(signal))(int64(bytes))
 	}
 
 }
@@ -1311,7 +1230,7 @@ func callbackQSerialPort_BytesWritten(ptr unsafe.Pointer, bytes C.longlong) {
 //export callbackQSerialPort_ChannelBytesWritten
 func callbackQSerialPort_ChannelBytesWritten(ptr unsafe.Pointer, channel C.int, bytes C.longlong) {
 	if signal := qt.GetSignal(ptr, "channelBytesWritten"); signal != nil {
-		signal.(func(int, int64))(int(int32(channel)), int64(bytes))
+		(*(*func(int, int64))(signal))(int(int32(channel)), int64(bytes))
 	}
 
 }
@@ -1319,23 +1238,7 @@ func callbackQSerialPort_ChannelBytesWritten(ptr unsafe.Pointer, channel C.int, 
 //export callbackQSerialPort_ChannelReadyRead
 func callbackQSerialPort_ChannelReadyRead(ptr unsafe.Pointer, channel C.int) {
 	if signal := qt.GetSignal(ptr, "channelReadyRead"); signal != nil {
-		signal.(func(int))(int(int32(channel)))
-	}
-
-}
-
-//export callbackQSerialPort_ReadChannelFinished
-func callbackQSerialPort_ReadChannelFinished(ptr unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "readChannelFinished"); signal != nil {
-		signal.(func())()
-	}
-
-}
-
-//export callbackQSerialPort_ReadyRead
-func callbackQSerialPort_ReadyRead(ptr unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "readyRead"); signal != nil {
-		signal.(func())()
+		(*(*func(int))(signal))(int(int32(channel)))
 	}
 
 }
@@ -1343,7 +1246,7 @@ func callbackQSerialPort_ReadyRead(ptr unsafe.Pointer) {
 //export callbackQSerialPort_Pos
 func callbackQSerialPort_Pos(ptr unsafe.Pointer) C.longlong {
 	if signal := qt.GetSignal(ptr, "pos"); signal != nil {
-		return C.longlong(signal.(func() int64)())
+		return C.longlong((*(*func() int64)(signal))())
 	}
 
 	return C.longlong(NewQSerialPortFromPointer(ptr).PosDefault())
@@ -1356,10 +1259,58 @@ func (ptr *QSerialPort) PosDefault() int64 {
 	return 0
 }
 
+//export callbackQSerialPort_ReadChannelFinished
+func callbackQSerialPort_ReadChannelFinished(ptr unsafe.Pointer) {
+	if signal := qt.GetSignal(ptr, "readChannelFinished"); signal != nil {
+		(*(*func())(signal))()
+	}
+
+}
+
+//export callbackQSerialPort_ReadyRead
+func callbackQSerialPort_ReadyRead(ptr unsafe.Pointer) {
+	if signal := qt.GetSignal(ptr, "readyRead"); signal != nil {
+		(*(*func())(signal))()
+	}
+
+}
+
+//export callbackQSerialPort_Reset
+func callbackQSerialPort_Reset(ptr unsafe.Pointer) C.char {
+	if signal := qt.GetSignal(ptr, "reset"); signal != nil {
+		return C.char(int8(qt.GoBoolToInt((*(*func() bool)(signal))())))
+	}
+
+	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).ResetDefault())))
+}
+
+func (ptr *QSerialPort) ResetDefault() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_ResetDefault(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+//export callbackQSerialPort_Seek
+func callbackQSerialPort_Seek(ptr unsafe.Pointer, pos C.longlong) C.char {
+	if signal := qt.GetSignal(ptr, "seek"); signal != nil {
+		return C.char(int8(qt.GoBoolToInt((*(*func(int64) bool)(signal))(int64(pos)))))
+	}
+
+	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).SeekDefault(int64(pos)))))
+}
+
+func (ptr *QSerialPort) SeekDefault(pos int64) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_SeekDefault(ptr.Pointer(), C.longlong(pos))) != 0
+	}
+	return false
+}
+
 //export callbackQSerialPort_Size
 func callbackQSerialPort_Size(ptr unsafe.Pointer) C.longlong {
 	if signal := qt.GetSignal(ptr, "size"); signal != nil {
-		return C.longlong(signal.(func() int64)())
+		return C.longlong((*(*func() int64)(signal))())
 	}
 
 	return C.longlong(NewQSerialPortFromPointer(ptr).SizeDefault())
@@ -1372,42 +1323,10 @@ func (ptr *QSerialPort) SizeDefault() int64 {
 	return 0
 }
 
-//export callbackQSerialPort_Event
-func callbackQSerialPort_Event(ptr unsafe.Pointer, e unsafe.Pointer) C.char {
-	if signal := qt.GetSignal(ptr, "event"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func(*core.QEvent) bool)(core.NewQEventFromPointer(e)))))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).EventDefault(core.NewQEventFromPointer(e)))))
-}
-
-func (ptr *QSerialPort) EventDefault(e core.QEvent_ITF) bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_EventDefault(ptr.Pointer(), core.PointerFromQEvent(e)) != 0
-	}
-	return false
-}
-
-//export callbackQSerialPort_EventFilter
-func callbackQSerialPort_EventFilter(ptr unsafe.Pointer, watched unsafe.Pointer, event unsafe.Pointer) C.char {
-	if signal := qt.GetSignal(ptr, "eventFilter"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func(*core.QObject, *core.QEvent) bool)(core.NewQObjectFromPointer(watched), core.NewQEventFromPointer(event)))))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).EventFilterDefault(core.NewQObjectFromPointer(watched), core.NewQEventFromPointer(event)))))
-}
-
-func (ptr *QSerialPort) EventFilterDefault(watched core.QObject_ITF, event core.QEvent_ITF) bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPort_EventFilterDefault(ptr.Pointer(), core.PointerFromQObject(watched), core.PointerFromQEvent(event)) != 0
-	}
-	return false
-}
-
 //export callbackQSerialPort_ChildEvent
 func callbackQSerialPort_ChildEvent(ptr unsafe.Pointer, event unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "childEvent"); signal != nil {
-		signal.(func(*core.QChildEvent))(core.NewQChildEventFromPointer(event))
+		(*(*func(*core.QChildEvent))(signal))(core.NewQChildEventFromPointer(event))
 	} else {
 		NewQSerialPortFromPointer(ptr).ChildEventDefault(core.NewQChildEventFromPointer(event))
 	}
@@ -1422,7 +1341,7 @@ func (ptr *QSerialPort) ChildEventDefault(event core.QChildEvent_ITF) {
 //export callbackQSerialPort_ConnectNotify
 func callbackQSerialPort_ConnectNotify(ptr unsafe.Pointer, sign unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "connectNotify"); signal != nil {
-		signal.(func(*core.QMetaMethod))(core.NewQMetaMethodFromPointer(sign))
+		(*(*func(*core.QMetaMethod))(signal))(core.NewQMetaMethodFromPointer(sign))
 	} else {
 		NewQSerialPortFromPointer(ptr).ConnectNotifyDefault(core.NewQMetaMethodFromPointer(sign))
 	}
@@ -1437,7 +1356,7 @@ func (ptr *QSerialPort) ConnectNotifyDefault(sign core.QMetaMethod_ITF) {
 //export callbackQSerialPort_CustomEvent
 func callbackQSerialPort_CustomEvent(ptr unsafe.Pointer, event unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "customEvent"); signal != nil {
-		signal.(func(*core.QEvent))(core.NewQEventFromPointer(event))
+		(*(*func(*core.QEvent))(signal))(core.NewQEventFromPointer(event))
 	} else {
 		NewQSerialPortFromPointer(ptr).CustomEventDefault(core.NewQEventFromPointer(event))
 	}
@@ -1452,7 +1371,7 @@ func (ptr *QSerialPort) CustomEventDefault(event core.QEvent_ITF) {
 //export callbackQSerialPort_DeleteLater
 func callbackQSerialPort_DeleteLater(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "deleteLater"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQSerialPortFromPointer(ptr).DeleteLaterDefault()
 	}
@@ -1461,7 +1380,6 @@ func callbackQSerialPort_DeleteLater(ptr unsafe.Pointer) {
 func (ptr *QSerialPort) DeleteLaterDefault() {
 	if ptr.Pointer() != nil {
 		C.QSerialPort_DeleteLaterDefault(ptr.Pointer())
-		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
 }
@@ -1469,7 +1387,7 @@ func (ptr *QSerialPort) DeleteLaterDefault() {
 //export callbackQSerialPort_Destroyed
 func callbackQSerialPort_Destroyed(ptr unsafe.Pointer, obj unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "destroyed"); signal != nil {
-		signal.(func(*core.QObject))(core.NewQObjectFromPointer(obj))
+		(*(*func(*core.QObject))(signal))(core.NewQObjectFromPointer(obj))
 	}
 
 }
@@ -1477,7 +1395,7 @@ func callbackQSerialPort_Destroyed(ptr unsafe.Pointer, obj unsafe.Pointer) {
 //export callbackQSerialPort_DisconnectNotify
 func callbackQSerialPort_DisconnectNotify(ptr unsafe.Pointer, sign unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "disconnectNotify"); signal != nil {
-		signal.(func(*core.QMetaMethod))(core.NewQMetaMethodFromPointer(sign))
+		(*(*func(*core.QMetaMethod))(signal))(core.NewQMetaMethodFromPointer(sign))
 	} else {
 		NewQSerialPortFromPointer(ptr).DisconnectNotifyDefault(core.NewQMetaMethodFromPointer(sign))
 	}
@@ -1489,10 +1407,42 @@ func (ptr *QSerialPort) DisconnectNotifyDefault(sign core.QMetaMethod_ITF) {
 	}
 }
 
+//export callbackQSerialPort_Event
+func callbackQSerialPort_Event(ptr unsafe.Pointer, e unsafe.Pointer) C.char {
+	if signal := qt.GetSignal(ptr, "event"); signal != nil {
+		return C.char(int8(qt.GoBoolToInt((*(*func(*core.QEvent) bool)(signal))(core.NewQEventFromPointer(e)))))
+	}
+
+	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).EventDefault(core.NewQEventFromPointer(e)))))
+}
+
+func (ptr *QSerialPort) EventDefault(e core.QEvent_ITF) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_EventDefault(ptr.Pointer(), core.PointerFromQEvent(e))) != 0
+	}
+	return false
+}
+
+//export callbackQSerialPort_EventFilter
+func callbackQSerialPort_EventFilter(ptr unsafe.Pointer, watched unsafe.Pointer, event unsafe.Pointer) C.char {
+	if signal := qt.GetSignal(ptr, "eventFilter"); signal != nil {
+		return C.char(int8(qt.GoBoolToInt((*(*func(*core.QObject, *core.QEvent) bool)(signal))(core.NewQObjectFromPointer(watched), core.NewQEventFromPointer(event)))))
+	}
+
+	return C.char(int8(qt.GoBoolToInt(NewQSerialPortFromPointer(ptr).EventFilterDefault(core.NewQObjectFromPointer(watched), core.NewQEventFromPointer(event)))))
+}
+
+func (ptr *QSerialPort) EventFilterDefault(watched core.QObject_ITF, event core.QEvent_ITF) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPort_EventFilterDefault(ptr.Pointer(), core.PointerFromQObject(watched), core.PointerFromQEvent(event))) != 0
+	}
+	return false
+}
+
 //export callbackQSerialPort_ObjectNameChanged
 func callbackQSerialPort_ObjectNameChanged(ptr unsafe.Pointer, objectName C.struct_QtSerialPort_PackedString) {
 	if signal := qt.GetSignal(ptr, "objectNameChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(objectName))
+		(*(*func(string))(signal))(cGoUnpackString(objectName))
 	}
 
 }
@@ -1500,7 +1450,7 @@ func callbackQSerialPort_ObjectNameChanged(ptr unsafe.Pointer, objectName C.stru
 //export callbackQSerialPort_TimerEvent
 func callbackQSerialPort_TimerEvent(ptr unsafe.Pointer, event unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "timerEvent"); signal != nil {
-		signal.(func(*core.QTimerEvent))(core.NewQTimerEventFromPointer(event))
+		(*(*func(*core.QTimerEvent))(signal))(core.NewQTimerEventFromPointer(event))
 	} else {
 		NewQSerialPortFromPointer(ptr).TimerEventDefault(core.NewQTimerEventFromPointer(event))
 	}
@@ -1549,6 +1499,35 @@ func NewQSerialPortInfoFromPointer(ptr unsafe.Pointer) (n *QSerialPortInfo) {
 	n.SetPointer(ptr)
 	return
 }
+func NewQSerialPortInfo() *QSerialPortInfo {
+	tmpValue := NewQSerialPortInfoFromPointer(C.QSerialPortInfo_NewQSerialPortInfo())
+	runtime.SetFinalizer(tmpValue, (*QSerialPortInfo).DestroyQSerialPortInfo)
+	return tmpValue
+}
+
+func NewQSerialPortInfo2(port QSerialPort_ITF) *QSerialPortInfo {
+	tmpValue := NewQSerialPortInfoFromPointer(C.QSerialPortInfo_NewQSerialPortInfo2(PointerFromQSerialPort(port)))
+	runtime.SetFinalizer(tmpValue, (*QSerialPortInfo).DestroyQSerialPortInfo)
+	return tmpValue
+}
+
+func NewQSerialPortInfo3(name string) *QSerialPortInfo {
+	var nameC *C.char
+	if name != "" {
+		nameC = C.CString(name)
+		defer C.free(unsafe.Pointer(nameC))
+	}
+	tmpValue := NewQSerialPortInfoFromPointer(C.QSerialPortInfo_NewQSerialPortInfo3(C.struct_QtSerialPort_PackedString{data: nameC, len: C.longlong(len(name))}))
+	runtime.SetFinalizer(tmpValue, (*QSerialPortInfo).DestroyQSerialPortInfo)
+	return tmpValue
+}
+
+func NewQSerialPortInfo4(other QSerialPortInfo_ITF) *QSerialPortInfo {
+	tmpValue := NewQSerialPortInfoFromPointer(C.QSerialPortInfo_NewQSerialPortInfo4(PointerFromQSerialPortInfo(other)))
+	runtime.SetFinalizer(tmpValue, (*QSerialPortInfo).DestroyQSerialPortInfo)
+	return tmpValue
+}
+
 func QSerialPortInfo_AvailablePorts() []*QSerialPortInfo {
 	return func(l C.struct_QtSerialPort_PackedList) []*QSerialPortInfo {
 		out := make([]*QSerialPortInfo, int(l.len))
@@ -1569,6 +1548,69 @@ func (ptr *QSerialPortInfo) AvailablePorts() []*QSerialPortInfo {
 		}
 		return out
 	}(C.QSerialPortInfo_QSerialPortInfo_AvailablePorts())
+}
+
+func (ptr *QSerialPortInfo) Description() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QSerialPortInfo_Description(ptr.Pointer()))
+	}
+	return ""
+}
+
+func (ptr *QSerialPortInfo) HasProductIdentifier() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPortInfo_HasProductIdentifier(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPortInfo) HasVendorIdentifier() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPortInfo_HasVendorIdentifier(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPortInfo) IsBusy() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPortInfo_IsBusy(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPortInfo) IsNull() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSerialPortInfo_IsNull(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QSerialPortInfo) Manufacturer() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QSerialPortInfo_Manufacturer(ptr.Pointer()))
+	}
+	return ""
+}
+
+func (ptr *QSerialPortInfo) PortName() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QSerialPortInfo_PortName(ptr.Pointer()))
+	}
+	return ""
+}
+
+func (ptr *QSerialPortInfo) ProductIdentifier() uint16 {
+	if ptr.Pointer() != nil {
+		return uint16(C.QSerialPortInfo_ProductIdentifier(ptr.Pointer()))
+	}
+	return 0
+}
+
+func (ptr *QSerialPortInfo) SerialNumber() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QSerialPortInfo_SerialNumber(ptr.Pointer()))
+	}
+	return ""
 }
 
 func QSerialPortInfo_StandardBaudRates() []int {
@@ -1593,75 +1635,10 @@ func (ptr *QSerialPortInfo) StandardBaudRates() []int {
 	}(C.QSerialPortInfo_QSerialPortInfo_StandardBaudRates())
 }
 
-func NewQSerialPortInfo() *QSerialPortInfo {
-	tmpValue := NewQSerialPortInfoFromPointer(C.QSerialPortInfo_NewQSerialPortInfo())
-	runtime.SetFinalizer(tmpValue, (*QSerialPortInfo).DestroyQSerialPortInfo)
-	return tmpValue
-}
-
-func NewQSerialPortInfo2(port QSerialPort_ITF) *QSerialPortInfo {
-	tmpValue := NewQSerialPortInfoFromPointer(C.QSerialPortInfo_NewQSerialPortInfo2(PointerFromQSerialPort(port)))
-	runtime.SetFinalizer(tmpValue, (*QSerialPortInfo).DestroyQSerialPortInfo)
-	return tmpValue
-}
-
-func NewQSerialPortInfo4(other QSerialPortInfo_ITF) *QSerialPortInfo {
-	tmpValue := NewQSerialPortInfoFromPointer(C.QSerialPortInfo_NewQSerialPortInfo4(PointerFromQSerialPortInfo(other)))
-	runtime.SetFinalizer(tmpValue, (*QSerialPortInfo).DestroyQSerialPortInfo)
-	return tmpValue
-}
-
-func NewQSerialPortInfo3(name string) *QSerialPortInfo {
-	var nameC *C.char
-	if name != "" {
-		nameC = C.CString(name)
-		defer C.free(unsafe.Pointer(nameC))
-	}
-	tmpValue := NewQSerialPortInfoFromPointer(C.QSerialPortInfo_NewQSerialPortInfo3(C.struct_QtSerialPort_PackedString{data: nameC, len: C.longlong(len(name))}))
-	runtime.SetFinalizer(tmpValue, (*QSerialPortInfo).DestroyQSerialPortInfo)
-	return tmpValue
-}
-
 func (ptr *QSerialPortInfo) Swap(other QSerialPortInfo_ITF) {
 	if ptr.Pointer() != nil {
 		C.QSerialPortInfo_Swap(ptr.Pointer(), PointerFromQSerialPortInfo(other))
 	}
-}
-
-func (ptr *QSerialPortInfo) DestroyQSerialPortInfo() {
-	if ptr.Pointer() != nil {
-		C.QSerialPortInfo_DestroyQSerialPortInfo(ptr.Pointer())
-		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
-	}
-}
-
-func (ptr *QSerialPortInfo) Description() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QSerialPortInfo_Description(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QSerialPortInfo) Manufacturer() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QSerialPortInfo_Manufacturer(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QSerialPortInfo) PortName() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QSerialPortInfo_PortName(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QSerialPortInfo) SerialNumber() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QSerialPortInfo_SerialNumber(ptr.Pointer()))
-	}
-	return ""
 }
 
 func (ptr *QSerialPortInfo) SystemLocation() string {
@@ -1671,46 +1648,19 @@ func (ptr *QSerialPortInfo) SystemLocation() string {
 	return ""
 }
 
-func (ptr *QSerialPortInfo) HasProductIdentifier() bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPortInfo_HasProductIdentifier(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QSerialPortInfo) HasVendorIdentifier() bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPortInfo_HasVendorIdentifier(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QSerialPortInfo) IsBusy() bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPortInfo_IsBusy(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QSerialPortInfo) IsNull() bool {
-	if ptr.Pointer() != nil {
-		return C.QSerialPortInfo_IsNull(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QSerialPortInfo) ProductIdentifier() uint16 {
-	if ptr.Pointer() != nil {
-		return uint16(C.QSerialPortInfo_ProductIdentifier(ptr.Pointer()))
-	}
-	return 0
-}
-
 func (ptr *QSerialPortInfo) VendorIdentifier() uint16 {
 	if ptr.Pointer() != nil {
 		return uint16(C.QSerialPortInfo_VendorIdentifier(ptr.Pointer()))
 	}
 	return 0
+}
+
+func (ptr *QSerialPortInfo) DestroyQSerialPortInfo() {
+	if ptr.Pointer() != nil {
+		C.QSerialPortInfo_DestroyQSerialPortInfo(ptr.Pointer())
+		ptr.SetPointer(nil)
+		runtime.SetFinalizer(ptr, nil)
+	}
 }
 
 func (ptr *QSerialPortInfo) __availablePorts_atList(i int) *QSerialPortInfo {

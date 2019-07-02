@@ -307,7 +307,7 @@ func (t *TextEdit) setupTextActions() {
 
 	menu.AddSeparator()
 
-	var pix = gui.NewQPixmap3(16, 16)
+	var pix = gui.NewQPixmap2(core.NewQSize2(16, 16))
 	pix.Fill(gui.NewQColor2(core.Qt__black))
 	t.actionTextColor = menu.AddAction2(gui.NewQIcon2(pix), "&Color...")
 	t.actionTextColor.ConnectTriggered(func(checked bool) { t.textColor() })
@@ -333,11 +333,9 @@ func (t *TextEdit) setupTextActions() {
 	})
 	t.comboStyle.ConnectActivated(t.textStyle)
 
-	if runtime.GOARCH != "js" {
-		t.comboFont = widgets.NewQFontComboBox(tb)
-		tb.AddWidget(t.comboFont)
-		t.comboFont.ConnectActivated2(t.textFamily)
-	}
+	t.comboFont = widgets.NewQFontComboBox(tb)
+	tb.AddWidget(t.comboFont)
+	t.comboFont.ConnectActivated2(t.textFamily)
 
 	t.comboSize = widgets.NewQComboBox(tb)
 	t.comboSize.SetObjectName("comboSize")
@@ -360,9 +358,6 @@ func (t *TextEdit) setupTextActions() {
 }
 
 func (t *TextEdit) fontChanged(f *gui.QFont) {
-	if runtime.GOARCH == "js" {
-		return
-	}
 	t.comboFont.SetCurrentIndex(t.comboFont.FindText(gui.NewQFontInfo(f).Family(), core.Qt__MatchExactly|core.Qt__MatchCaseSensitive))
 	t.comboSize.SetCurrentIndex(t.comboSize.FindText(strconv.Itoa(f.PointSize()), core.Qt__MatchExactly|core.Qt__MatchCaseSensitive))
 	t.actionTextBold.SetChecked(f.Bold())
@@ -371,7 +366,7 @@ func (t *TextEdit) fontChanged(f *gui.QFont) {
 }
 
 func (t *TextEdit) colorChanged(c *gui.QColor) {
-	var pix = gui.NewQPixmap3(16, 16)
+	var pix = gui.NewQPixmap2(core.NewQSize2(16, 16))
 	pix.Fill(c)
 	t.actionTextColor.SetIcon(gui.NewQIcon2(pix))
 }
@@ -423,9 +418,6 @@ func (t *TextEdit) clipboardDataChanged() {
 }
 
 func (t *TextEdit) load(f string) bool {
-	if runtime.GOARCH == "js" {
-		return false
-	}
 	if !(core.QFile_Exists(f)) {
 		return false
 	}
@@ -433,6 +425,7 @@ func (t *TextEdit) load(f string) bool {
 	if !file.Open(core.QIODevice__ReadOnly) {
 		return false
 	}
+	defer file.Close()
 
 	var (
 		data  = file.ReadAll()

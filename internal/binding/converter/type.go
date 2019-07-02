@@ -9,6 +9,7 @@ import (
 	"github.com/therecipe/qt/internal/binding/parser"
 )
 
+func GoType(f *parser.Function, value string, p string) string { return goType(f, value, p) }
 func goType(f *parser.Function, value string, p string) string {
 	var vOld = value
 
@@ -29,15 +30,26 @@ func goType(f *parser.Function, value string, p string) string {
 				return "*string"
 			}
 
+			switch value {
+			case "char", "qint8", "uchar", "quint8", "GLubyte":
+				if len(f.Parameters) <= 4 &&
+					(strings.Contains(strings.ToLower(f.Name), "read") ||
+						strings.Contains(strings.ToLower(f.Name), "write") ||
+						strings.Contains(strings.ToLower(f.Name), "data")) {
+					for _, p := range f.Parameters {
+						if strings.Contains(p.Value, "int") && f.Parameters[0].Value == vOld {
+							return "[]byte"
+						}
+					}
+				}
+			}
+
 			return "string"
 		}
 
 	case "void", "GLvoid", "":
 		{
 			if strings.Contains(vOld, "*") {
-				if parser.UseJs() {
-					return "uintptr"
-				}
 				return "unsafe.Pointer"
 			}
 
@@ -46,6 +58,9 @@ func goType(f *parser.Function, value string, p string) string {
 
 	case "bool", "GLboolean":
 		{
+			if strings.Contains(vOld, "*") {
+				return "*bool"
+			}
 			return "bool"
 		}
 
@@ -64,13 +79,16 @@ func goType(f *parser.Function, value string, p string) string {
 			return "int"
 		}
 
-	case "uint", "unsigned int", "quint32", "GLenum", "GLbitfield", "GLuint":
+	case "uint", "unsigned int", "quint32", "GLenum", "GLbitfield", "GLuint", "QRgb":
 		{
 			return "uint"
 		}
 
 	case "long":
 		{
+			if strings.Contains(vOld, "*") {
+				return "*int"
+			}
 			return "int"
 		}
 
@@ -250,6 +268,9 @@ func cgoType(f *parser.Function, value string) string {
 
 	case "bool", "GLboolean":
 		{
+			if strings.Contains(vOld, "*") {
+				return "*C.char"
+			}
 			return "C.char"
 		}
 
@@ -268,13 +289,16 @@ func cgoType(f *parser.Function, value string) string {
 			return "C.int"
 		}
 
-	case "uint", "unsigned int", "quint32", "GLenum", "GLbitfield", "GLuint":
+	case "uint", "unsigned int", "quint32", "GLenum", "GLbitfield", "GLuint", "QRgb":
 		{
 			return "C.uint"
 		}
 
 	case "long":
 		{
+			if strings.Contains(vOld, "*") {
+				return "*C.long"
+			}
 			return "C.long"
 		}
 
@@ -371,7 +395,13 @@ func cppType(f *parser.Function, value string) string {
 		{
 			if strings.Contains(vOld, "*") {
 				if parser.UseJs() {
-					for _, p := range f.Parameters {
+					if f.SignalMode == parser.CALLBACK {
+						return "uintptr_t"
+					}
+					for _, p := range append(f.Parameters, &parser.Parameter{Value: f.Output}) {
+						if parser.IsPackedList(p.Value) || parser.IsPackedMap(p.Value) {
+							return "uintptr_t"
+						}
 						switch parser.CleanValue(p.Value) {
 						case "char", "qint8", "uchar", "quint8", "GLubyte", "QString", "QStringList":
 							return "uintptr_t"
@@ -386,6 +416,23 @@ func cppType(f *parser.Function, value string) string {
 
 	case "bool", "GLboolean":
 		{
+			if strings.Contains(vOld, "*") {
+				if parser.UseJs() {
+					if f.SignalMode == parser.CALLBACK {
+						return "uintptr_t"
+					}
+					for _, p := range append(f.Parameters, &parser.Parameter{Value: f.Output}) {
+						if parser.IsPackedList(p.Value) || parser.IsPackedMap(p.Value) {
+							return "uintptr_t"
+						}
+						switch parser.CleanValue(p.Value) {
+						case "char", "qint8", "uchar", "quint8", "GLubyte", "QString", "QStringList":
+							return "uintptr_t"
+						}
+					}
+				}
+				return "char*"
+			}
 			return "char"
 		}
 
@@ -404,13 +451,31 @@ func cppType(f *parser.Function, value string) string {
 			return "int"
 		}
 
-	case "uint", "unsigned int", "quint32", "GLenum", "GLbitfield", "GLuint":
+	case "uint", "unsigned int", "quint32", "GLenum", "GLbitfield", "GLuint", "QRgb":
 		{
 			return "unsigned int"
 		}
 
 	case "long":
 		{
+			if strings.Contains(vOld, "*") {
+				if parser.UseJs() {
+					if f.SignalMode == parser.CALLBACK {
+						return "uintptr_t"
+					}
+					for _, p := range append(f.Parameters, &parser.Parameter{Value: f.Output}) {
+						if parser.IsPackedList(p.Value) || parser.IsPackedMap(p.Value) {
+							return "uintptr_t"
+						}
+						switch parser.CleanValue(p.Value) {
+						case "char", "qint8", "uchar", "quint8", "GLubyte", "QString", "QStringList":
+							return "uintptr_t"
+						}
+					}
+					return "void*"
+				}
+				return "long*"
+			}
 			return "long"
 		}
 

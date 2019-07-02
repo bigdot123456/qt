@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/therecipe/qt/core"
+	"github.com/therecipe/qt/gui"
 	"github.com/therecipe/qt/widgets"
 )
 
@@ -37,6 +38,14 @@ func main() {
 	mainWindow.SetCentralWidget(scrollWidget)
 	mainWindow.ShowMaximized()
 
+	//->needed to work around some iOS issue: https://github.com/therecipe/qt/issues/451
+	gui.QGuiApplication_Screens()[0].SetOrientationUpdateMask(core.Qt__PrimaryOrientation | core.Qt__LandscapeOrientation | core.Qt__PortraitOrientation | core.Qt__InvertedLandscapeOrientation | core.Qt__InvertedPortraitOrientation)
+	gui.QGuiApplication_Screens()[0].ConnectOrientationChanged(func(core.Qt__ScreenOrientation) {
+		mainWindow.Hide()
+		go mainWindow.Show()
+	})
+	//<-
+
 	widgets.QApplication_Exec()
 }
 
@@ -52,7 +61,7 @@ func addWidget(widget widgets.QWidget_ITF) {
 	wrappedWidgetLayout.AddWidget(widget, 0, core.Qt__AlignCenter)
 	wrappedWidget.SetFixedSize2(250, 250)
 
-	centralLayout.AddWidget(wrappedWidget, centralLayoutRow, centralLayoutColumn, core.Qt__AlignCenter)
+	centralLayout.AddWidget2(wrappedWidget, centralLayoutRow, centralLayoutColumn, core.Qt__AlignCenter)
 
 	centralLayoutColumn++
 }

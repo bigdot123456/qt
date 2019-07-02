@@ -26,19 +26,19 @@ func run(target, name, depPath, device string) {
 		if device == "" {
 			out, _ := exec.Command("xcrun", "instruments", "-s").Output()
 			lines := strings.Split(string(out), "iPhone")
-			device = strings.Split(strings.Split(string(out), "iPhone 8 ("+strings.Split(strings.Split(lines[len(lines)-1], "(")[1], ")")[0]+") [")[1], "]")[0]
+			device = strings.Split(strings.Split(string(out), "iPhone Xʀ ("+strings.Split(strings.Split(lines[len(lines)-1], "(")[1], ")")[0]+") [")[1], "]")[0]
 		}
 		go utils.RunCmdOptional(exec.Command("xcrun", "instruments", "-w", device), "start simulator")
 		time.Sleep(1 * time.Second)
 		utils.RunCmdOptional(exec.Command("xcrun", "simctl", "uninstall", "booted", filepath.Join(depPath, "main.app")), "uninstall old app")
 		utils.RunCmdOptional(exec.Command("xcrun", "simctl", "install", "booted", filepath.Join(depPath, "main.app")), "install new app")
-		utils.RunCmdOptional(exec.Command("xcrun", "simctl", "launch", "booted", fmt.Sprintf("com.yourcompany.%v", name)), "start app") //TODO: parse ident from plist
+		utils.RunCmdOptional(exec.Command("xcrun", "simctl", "launch", "booted", strings.Replace(name, "_", "", -1)), "start app") //TODO: parse ident from plist
 
 	case "darwin":
 		exec.Command("open", filepath.Join(depPath, fmt.Sprintf("%v.app", name))).Start()
 
-	case "linux":
-		exec.Command(filepath.Join(depPath, fmt.Sprintf("%v.sh", name))).Start()
+	case "linux", "freebsd":
+		exec.Command(filepath.Join(depPath, name)).Start()
 
 	case "windows":
 		if runtime.GOOS == target {
@@ -51,13 +51,19 @@ func run(target, name, depPath, device string) {
 		if utils.QT_SAILFISH() {
 			return
 		}
-		utils.RunCmdOptional(exec.Command(filepath.Join(utils.VIRTUALBOX_DIR(), "vboxmanage"), "registervm", filepath.Join(utils.SAILFISH_DIR(), "emulator", "Sailfish OS Emulator", "Sailfish OS Emulator.vbox")), "register vm")
-		utils.RunCmdOptional(exec.Command(filepath.Join(utils.VIRTUALBOX_DIR(), "vboxmanage"), "sharedfolder", "add", "Sailfish OS Emulator", "--name", "GOPATH", "--hostpath", utils.MustGoPath(), "--automount"), "mount GOPATH")
+
+		emulator := "Sailfish OS Emulator"
+		if strings.HasPrefix(utils.QT_SAILFISH_VERSION(), "3.") {
+			emulator = fmt.Sprintf("Sailfish OS Emulator %v", utils.QT_SAILFISH_VERSION())
+		}
+
+		utils.RunCmdOptional(exec.Command(filepath.Join(utils.VIRTUALBOX_DIR(), "vboxmanage"), "registervm", filepath.Join(utils.SAILFISH_DIR(), "emulator", emulator, emulator+".vbox")), "register vm")
+		utils.RunCmdOptional(exec.Command(filepath.Join(utils.VIRTUALBOX_DIR(), "vboxmanage"), "sharedfolder", "add", emulator, "--name", "GOPATH", "--hostpath", utils.MustGoPath(), "--automount"), "mount GOPATH")
 
 		if runtime.GOOS == "windows" {
-			utils.RunCmdOptional(exec.Command(filepath.Join(utils.VIRTUALBOX_DIR(), "vboxmanage"), "startvm", "Sailfish OS Emulator"), "start emulator")
+			utils.RunCmdOptional(exec.Command(filepath.Join(utils.VIRTUALBOX_DIR(), "vboxmanage"), "startvm", emulator), "start emulator")
 		} else {
-			utils.RunCmdOptional(exec.Command("nohup", filepath.Join(utils.VIRTUALBOX_DIR(), "vboxmanage"), "startvm", "Sailfish OS Emulator"), "start emulator")
+			utils.RunCmdOptional(exec.Command("nohup", filepath.Join(utils.VIRTUALBOX_DIR(), "vboxmanage"), "startvm", emulator), "start emulator")
 		}
 
 		time.Sleep(10 * time.Second)
@@ -72,7 +78,7 @@ func run(target, name, depPath, device string) {
 			utils.Log.WithError(err).Errorf("failed to run %v for %v", name, target)
 		}
 
-	case "js": //TODO: REVIEW
+	case "js", "wasm": //TODO: REVIEW and use emscripten wrapper instead
 		if runtime.GOOS == "darwin" {
 			exec.Command("/Applications/Firefox Nightly.app/Contents/MacOS/firefox", filepath.Join(depPath, "index.html")).Start()
 		}

@@ -2,7 +2,12 @@ package deploy
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/therecipe/qt/internal/binding/parser"
 
 	"github.com/therecipe/qt/internal/cmd"
 	"github.com/therecipe/qt/internal/cmd/minimal"
@@ -12,13 +17,40 @@ import (
 	"github.com/therecipe/qt/internal/utils"
 )
 
-func Deploy(mode, target, path string, docker bool, ldFlags, tags string, fast bool, device string, vagrant bool, vagrantsystem string, comply bool) {
-	utils.Log.WithField("mode", mode).WithField("target", target).WithField("path", path).WithField("docker", docker).WithField("ldFlags", ldFlags).WithField("fast", fast).WithField("comply", comply).Debug("running Deploy")
+func Deploy(mode, target, path string, docker bool, ldFlags, tags string, fast bool, device string, vagrant bool, vagrantsystem string, comply bool, useuic bool, quickcompiler bool) {
+	defer func() { parser.State.ClassMap = make(map[string]*parser.Class) }()
+
+	utils.Log.WithField("mode", mode).WithField("target", target).WithField("path", path).WithField("docker", docker).
+		WithField("ldFlags", ldFlags).WithField("fast", fast).WithField("comply", comply).
+		WithField("useuic", useuic).WithField("quickcompiler", quickcompiler).Debug("running Deploy")
+
 	name := filepath.Base(path)
+	switch name {
+	case "lib", "plugins", "qml",
+		"audio", "bearer", "iconengines", "imageformats", "mediaservice",
+		"platforminputcontexts", "platforms", "playlistformats", "qmltooling",
+		"qt", "Qt", "QT", "styles", "translations":
+		name += "_project"
+	}
 	depPath := filepath.Join(path, "deploy", target)
 
 	switch mode {
 	case "build", "test":
+
+		if !(fast && (strings.HasPrefix(target, "js") || strings.HasPrefix(target, "wasm"))) {
+			err := os.RemoveAll(depPath)
+			if err != nil {
+				utils.Log.WithError(err).Panic("failed to remove deploy folder")
+			}
+		}
+
+		if utils.UseGOMOD(path) {
+			if !utils.ExistsDir(filepath.Join(filepath.Dir(utils.GOMOD(path)), "vendor")) {
+				cmd := exec.Command("go", "mod", "vendor")
+				cmd.Dir = path
+				utils.RunCmd(cmd, "go mod vendor")
+			}
+		}
 
 		if docker || vagrant {
 			args := []string{"qtdeploy", "-debug"}
@@ -28,6 +60,13 @@ func Deploy(mode, target, path string, docker bool, ldFlags, tags string, fast b
 			if comply {
 				args = append(args, "-comply")
 			}
+			if !useuic {
+				args = append(args, "-uic=false")
+			}
+			if quickcompiler {
+				args = append(args, "-quickcompiler")
+			}
+
 			if vagrantsystem == "docker" {
 				args = append(args, "-docker")
 			}
@@ -41,34 +80,34 @@ func Deploy(mode, target, path string, docker bool, ldFlags, tags string, fast b
 			break
 		}
 
-		if !fast {
-			err := os.RemoveAll(depPath)
-			if err != nil {
-				utils.Log.WithError(err).Panic("failed to remove deploy folder")
-			}
-		}
-
 		if utils.ExistsDir(depPath + "_obj") {
 			utils.RemoveAll(depPath + "_obj")
 		}
 
-		rcc.Rcc(path, target, tags, os.Getenv("QTRCC_OUTPUT_DIR"))
+		rcc.Rcc(path, target, tags, os.Getenv("QTRCC_OUTPUT_DIR"), useuic, quickcompiler, true)
 		if !fast {
-			moc.Moc(path, target, tags, false, false)
+			moc.Moc(path, target, tags, false, false, true)
 		}
 
-		if (!fast || utils.QT_STUB()) && !utils.QT_FAT() {
+		if ((!fast || utils.QT_STUB()) || ((target == "js" || target == "wasm") && (utils.QT_DOCKER() || utils.QT_VAGRANT()))) && !utils.QT_FAT() {
 			minimal.Minimal(path, target, tags)
 		}
 
 		build(mode, target, path, ldFlags, tags, name, depPath, fast, comply)
 
-		if !(fast || utils.QT_DEBUG_QML()) {
-			bundle(mode, target, path, name, depPath)
+		if !(fast || (utils.QT_DEBUG_QML() && target == runtime.GOOS)) || (target == "js" || target == "wasm") {
+			bundle(mode, target, path, name, depPath, tags, fast)
+		} else if fast {
+			switch target {
+			case "darwin":
+				if fn := filepath.Join(depPath, name+".app", "Contents", "Info.plist"); !utils.ExistsFile(fn) {
+					utils.Save(fn, darwin_plist(name))
+				}
+			}
 		}
 	}
 
-	if mode == "run" || mode == "test" {
+	if (mode == "run" || mode == "test") && !(fast && (strings.HasPrefix(target, "js") || strings.HasPrefix(target, "wasm"))) {
 		run(target, name, depPath, device)
 	}
 }

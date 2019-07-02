@@ -22,6 +22,19 @@ func cGoUnpackString(s C.struct_QtDataVisualization_PackedString) string {
 	}
 	return C.GoStringN(s.data, C.int(s.len))
 }
+func cGoUnpackBytes(s C.struct_QtDataVisualization_PackedString) []byte {
+	if int(s.len) == -1 {
+		gs := C.GoString(s.data)
+		return *(*[]byte)(unsafe.Pointer(&gs))
+	}
+	return C.GoBytes(unsafe.Pointer(s.data), C.int(s.len))
+}
+func unpackStringList(s string) []string {
+	if len(s) == 0 {
+		return make([]string, 0)
+	}
+	return strings.Split(s, "¡¦!")
+}
 
 type Q3DBars struct {
 	ptr unsafe.Pointer
@@ -64,62 +77,6 @@ func NewQ3DBars(format gui.QSurfaceFormat_ITF, parent gui.QWindow_ITF) *Q3DBars 
 	return NewQ3DBarsFromPointer(C.Q3DBars_NewQ3DBars(gui.PointerFromQSurfaceFormat(format), gui.PointerFromQWindow(parent)))
 }
 
-func Q3DBars_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DBars_Q3DBars_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DBars) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DBars_Q3DBars_Tr(sC, cC, C.int(int32(n))))
-}
-
-func Q3DBars_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DBars_Q3DBars_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DBars) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DBars_Q3DBars_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 func (ptr *Q3DBars) AddAxis(axis QAbstract3DAxis_ITF) {
 	if ptr.Pointer() != nil {
 		C.Q3DBars_AddAxis(ptr.Pointer(), PointerFromQAbstract3DAxis(axis))
@@ -132,10 +89,33 @@ func (ptr *Q3DBars) AddSeries(series QBar3DSeries_ITF) {
 	}
 }
 
+func (ptr *Q3DBars) Axes() []*QAbstract3DAxis {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []*QAbstract3DAxis {
+			out := make([]*QAbstract3DAxis, int(l.len))
+			tmpList := NewQ3DBarsFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__axes_atList(i)
+			}
+			return out
+		}(C.Q3DBars_Axes(ptr.Pointer()))
+	}
+	return make([]*QAbstract3DAxis, 0)
+}
+
+func (ptr *Q3DBars) BarSpacing() *core.QSizeF {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQSizeFFromPointer(C.Q3DBars_BarSpacing(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QSizeF).DestroyQSizeF)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DBars_BarSpacingChanged
 func callbackQ3DBars_BarSpacingChanged(ptr unsafe.Pointer, spacing unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "barSpacingChanged"); signal != nil {
-		signal.(func(*core.QSizeF))(core.NewQSizeFFromPointer(spacing))
+		(*(*func(*core.QSizeF))(signal))(core.NewQSizeFFromPointer(spacing))
 	}
 
 }
@@ -148,12 +128,13 @@ func (ptr *Q3DBars) ConnectBarSpacingChanged(f func(spacing *core.QSizeF)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "barSpacingChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "barSpacingChanged", func(spacing *core.QSizeF) {
-				signal.(func(*core.QSizeF))(spacing)
+			f := func(spacing *core.QSizeF) {
+				(*(*func(*core.QSizeF))(signal))(spacing)
 				f(spacing)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "barSpacingChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "barSpacingChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "barSpacingChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -174,7 +155,7 @@ func (ptr *Q3DBars) BarSpacingChanged(spacing core.QSizeF_ITF) {
 //export callbackQ3DBars_BarSpacingRelativeChanged
 func callbackQ3DBars_BarSpacingRelativeChanged(ptr unsafe.Pointer, relative C.char) {
 	if signal := qt.GetSignal(ptr, "barSpacingRelativeChanged"); signal != nil {
-		signal.(func(bool))(int8(relative) != 0)
+		(*(*func(bool))(signal))(int8(relative) != 0)
 	}
 
 }
@@ -187,12 +168,13 @@ func (ptr *Q3DBars) ConnectBarSpacingRelativeChanged(f func(relative bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "barSpacingRelativeChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "barSpacingRelativeChanged", func(relative bool) {
-				signal.(func(bool))(relative)
+			f := func(relative bool) {
+				(*(*func(bool))(signal))(relative)
 				f(relative)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "barSpacingRelativeChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "barSpacingRelativeChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "barSpacingRelativeChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -210,10 +192,17 @@ func (ptr *Q3DBars) BarSpacingRelativeChanged(relative bool) {
 	}
 }
 
+func (ptr *Q3DBars) BarThickness() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DBars_BarThickness(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DBars_BarThicknessChanged
 func callbackQ3DBars_BarThicknessChanged(ptr unsafe.Pointer, thicknessRatio C.float) {
 	if signal := qt.GetSignal(ptr, "barThicknessChanged"); signal != nil {
-		signal.(func(float32))(float32(thicknessRatio))
+		(*(*func(float32))(signal))(float32(thicknessRatio))
 	}
 
 }
@@ -226,12 +215,13 @@ func (ptr *Q3DBars) ConnectBarThicknessChanged(f func(thicknessRatio float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "barThicknessChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "barThicknessChanged", func(thicknessRatio float32) {
-				signal.(func(float32))(thicknessRatio)
+			f := func(thicknessRatio float32) {
+				(*(*func(float32))(signal))(thicknessRatio)
 				f(thicknessRatio)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "barThicknessChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "barThicknessChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "barThicknessChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -249,10 +239,17 @@ func (ptr *Q3DBars) BarThicknessChanged(thicknessRatio float32) {
 	}
 }
 
+func (ptr *Q3DBars) ColumnAxis() *QCategory3DAxis {
+	if ptr.Pointer() != nil {
+		return NewQCategory3DAxisFromPointer(C.Q3DBars_ColumnAxis(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DBars_ColumnAxisChanged
 func callbackQ3DBars_ColumnAxisChanged(ptr unsafe.Pointer, axis unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "columnAxisChanged"); signal != nil {
-		signal.(func(*QCategory3DAxis))(NewQCategory3DAxisFromPointer(axis))
+		(*(*func(*QCategory3DAxis))(signal))(NewQCategory3DAxisFromPointer(axis))
 	}
 
 }
@@ -265,12 +262,13 @@ func (ptr *Q3DBars) ConnectColumnAxisChanged(f func(axis *QCategory3DAxis)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnAxisChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnAxisChanged", func(axis *QCategory3DAxis) {
-				signal.(func(*QCategory3DAxis))(axis)
+			f := func(axis *QCategory3DAxis) {
+				(*(*func(*QCategory3DAxis))(signal))(axis)
 				f(axis)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnAxisChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnAxisChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnAxisChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -288,10 +286,17 @@ func (ptr *Q3DBars) ColumnAxisChanged(axis QCategory3DAxis_ITF) {
 	}
 }
 
+func (ptr *Q3DBars) FloorLevel() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DBars_FloorLevel(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DBars_FloorLevelChanged
 func callbackQ3DBars_FloorLevelChanged(ptr unsafe.Pointer, level C.float) {
 	if signal := qt.GetSignal(ptr, "floorLevelChanged"); signal != nil {
-		signal.(func(float32))(float32(level))
+		(*(*func(float32))(signal))(float32(level))
 	}
 
 }
@@ -304,12 +309,13 @@ func (ptr *Q3DBars) ConnectFloorLevelChanged(f func(level float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "floorLevelChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "floorLevelChanged", func(level float32) {
-				signal.(func(float32))(level)
+			f := func(level float32) {
+				(*(*func(float32))(signal))(level)
 				f(level)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "floorLevelChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "floorLevelChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "floorLevelChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -333,10 +339,24 @@ func (ptr *Q3DBars) InsertSeries(index int, series QBar3DSeries_ITF) {
 	}
 }
 
+func (ptr *Q3DBars) IsBarSpacingRelative() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DBars_IsBarSpacingRelative(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DBars) IsMultiSeriesUniform() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DBars_IsMultiSeriesUniform(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQ3DBars_MultiSeriesUniformChanged
 func callbackQ3DBars_MultiSeriesUniformChanged(ptr unsafe.Pointer, uniform C.char) {
 	if signal := qt.GetSignal(ptr, "multiSeriesUniformChanged"); signal != nil {
-		signal.(func(bool))(int8(uniform) != 0)
+		(*(*func(bool))(signal))(int8(uniform) != 0)
 	}
 
 }
@@ -349,12 +369,13 @@ func (ptr *Q3DBars) ConnectMultiSeriesUniformChanged(f func(uniform bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "multiSeriesUniformChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "multiSeriesUniformChanged", func(uniform bool) {
-				signal.(func(bool))(uniform)
+			f := func(uniform bool) {
+				(*(*func(bool))(signal))(uniform)
 				f(uniform)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "multiSeriesUniformChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "multiSeriesUniformChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "multiSeriesUniformChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -372,10 +393,17 @@ func (ptr *Q3DBars) MultiSeriesUniformChanged(uniform bool) {
 	}
 }
 
+func (ptr *Q3DBars) PrimarySeries() *QBar3DSeries {
+	if ptr.Pointer() != nil {
+		return NewQBar3DSeriesFromPointer(C.Q3DBars_PrimarySeries(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DBars_PrimarySeriesChanged
 func callbackQ3DBars_PrimarySeriesChanged(ptr unsafe.Pointer, series unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "primarySeriesChanged"); signal != nil {
-		signal.(func(*QBar3DSeries))(NewQBar3DSeriesFromPointer(series))
+		(*(*func(*QBar3DSeries))(signal))(NewQBar3DSeriesFromPointer(series))
 	}
 
 }
@@ -388,12 +416,13 @@ func (ptr *Q3DBars) ConnectPrimarySeriesChanged(f func(series *QBar3DSeries)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "primarySeriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "primarySeriesChanged", func(series *QBar3DSeries) {
-				signal.(func(*QBar3DSeries))(series)
+			f := func(series *QBar3DSeries) {
+				(*(*func(*QBar3DSeries))(signal))(series)
 				f(series)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "primarySeriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "primarySeriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "primarySeriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -423,10 +452,17 @@ func (ptr *Q3DBars) RemoveSeries(series QBar3DSeries_ITF) {
 	}
 }
 
+func (ptr *Q3DBars) RowAxis() *QCategory3DAxis {
+	if ptr.Pointer() != nil {
+		return NewQCategory3DAxisFromPointer(C.Q3DBars_RowAxis(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DBars_RowAxisChanged
 func callbackQ3DBars_RowAxisChanged(ptr unsafe.Pointer, axis unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "rowAxisChanged"); signal != nil {
-		signal.(func(*QCategory3DAxis))(NewQCategory3DAxisFromPointer(axis))
+		(*(*func(*QCategory3DAxis))(signal))(NewQCategory3DAxisFromPointer(axis))
 	}
 
 }
@@ -439,12 +475,13 @@ func (ptr *Q3DBars) ConnectRowAxisChanged(f func(axis *QCategory3DAxis)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowAxisChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowAxisChanged", func(axis *QCategory3DAxis) {
-				signal.(func(*QCategory3DAxis))(axis)
+			f := func(axis *QCategory3DAxis) {
+				(*(*func(*QCategory3DAxis))(signal))(axis)
 				f(axis)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowAxisChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowAxisChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowAxisChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -462,10 +499,17 @@ func (ptr *Q3DBars) RowAxisChanged(axis QCategory3DAxis_ITF) {
 	}
 }
 
+func (ptr *Q3DBars) SelectedSeries() *QBar3DSeries {
+	if ptr.Pointer() != nil {
+		return NewQBar3DSeriesFromPointer(C.Q3DBars_SelectedSeries(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DBars_SelectedSeriesChanged
 func callbackQ3DBars_SelectedSeriesChanged(ptr unsafe.Pointer, series unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "selectedSeriesChanged"); signal != nil {
-		signal.(func(*QBar3DSeries))(NewQBar3DSeriesFromPointer(series))
+		(*(*func(*QBar3DSeries))(signal))(NewQBar3DSeriesFromPointer(series))
 	}
 
 }
@@ -478,12 +522,13 @@ func (ptr *Q3DBars) ConnectSelectedSeriesChanged(f func(series *QBar3DSeries)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "selectedSeriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", func(series *QBar3DSeries) {
-				signal.(func(*QBar3DSeries))(series)
+			f := func(series *QBar3DSeries) {
+				(*(*func(*QBar3DSeries))(signal))(series)
 				f(series)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -499,6 +544,20 @@ func (ptr *Q3DBars) SelectedSeriesChanged(series QBar3DSeries_ITF) {
 	if ptr.Pointer() != nil {
 		C.Q3DBars_SelectedSeriesChanged(ptr.Pointer(), PointerFromQBar3DSeries(series))
 	}
+}
+
+func (ptr *Q3DBars) SeriesList() []*QBar3DSeries {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []*QBar3DSeries {
+			out := make([]*QBar3DSeries, int(l.len))
+			tmpList := NewQ3DBarsFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__seriesList_atList(i)
+			}
+			return out
+		}(C.Q3DBars_SeriesList(ptr.Pointer()))
+	}
+	return make([]*QBar3DSeries, 0)
 }
 
 func (ptr *Q3DBars) SetBarSpacing(spacing core.QSizeF_ITF) {
@@ -555,10 +614,17 @@ func (ptr *Q3DBars) SetValueAxis(axis QValue3DAxis_ITF) {
 	}
 }
 
+func (ptr *Q3DBars) ValueAxis() *QValue3DAxis {
+	if ptr.Pointer() != nil {
+		return NewQValue3DAxisFromPointer(C.Q3DBars_ValueAxis(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DBars_ValueAxisChanged
 func callbackQ3DBars_ValueAxisChanged(ptr unsafe.Pointer, axis unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "valueAxisChanged"); signal != nil {
-		signal.(func(*QValue3DAxis))(NewQValue3DAxisFromPointer(axis))
+		(*(*func(*QValue3DAxis))(signal))(NewQValue3DAxisFromPointer(axis))
 	}
 
 }
@@ -571,12 +637,13 @@ func (ptr *Q3DBars) ConnectValueAxisChanged(f func(axis *QValue3DAxis)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "valueAxisChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "valueAxisChanged", func(axis *QValue3DAxis) {
-				signal.(func(*QValue3DAxis))(axis)
+			f := func(axis *QValue3DAxis) {
+				(*(*func(*QValue3DAxis))(signal))(axis)
 				f(axis)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "valueAxisChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "valueAxisChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "valueAxisChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -597,7 +664,7 @@ func (ptr *Q3DBars) ValueAxisChanged(axis QValue3DAxis_ITF) {
 //export callbackQ3DBars_DestroyQ3DBars
 func callbackQ3DBars_DestroyQ3DBars(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~Q3DBars"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQ3DBarsFromPointer(ptr).DestroyQ3DBarsDefault()
 	}
@@ -607,12 +674,13 @@ func (ptr *Q3DBars) ConnectDestroyQ3DBars(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~Q3DBars"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DBars", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DBars", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DBars", f)
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DBars", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -638,150 +706,6 @@ func (ptr *Q3DBars) DestroyQ3DBarsDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *Q3DBars) PrimarySeries() *QBar3DSeries {
-	if ptr.Pointer() != nil {
-		return NewQBar3DSeriesFromPointer(C.Q3DBars_PrimarySeries(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DBars) SelectedSeries() *QBar3DSeries {
-	if ptr.Pointer() != nil {
-		return NewQBar3DSeriesFromPointer(C.Q3DBars_SelectedSeries(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DBars) ColumnAxis() *QCategory3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQCategory3DAxisFromPointer(C.Q3DBars_ColumnAxis(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DBars) RowAxis() *QCategory3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQCategory3DAxisFromPointer(C.Q3DBars_RowAxis(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DBars) Axes() []*QAbstract3DAxis {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*QAbstract3DAxis {
-			out := make([]*QAbstract3DAxis, int(l.len))
-			tmpList := NewQ3DBarsFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__axes_atList(i)
-			}
-			return out
-		}(C.Q3DBars_Axes(ptr.Pointer()))
-	}
-	return make([]*QAbstract3DAxis, 0)
-}
-
-func (ptr *Q3DBars) SeriesList() []*QBar3DSeries {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*QBar3DSeries {
-			out := make([]*QBar3DSeries, int(l.len))
-			tmpList := NewQ3DBarsFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__seriesList_atList(i)
-			}
-			return out
-		}(C.Q3DBars_SeriesList(ptr.Pointer()))
-	}
-	return make([]*QBar3DSeries, 0)
-}
-
-func (ptr *Q3DBars) BarSpacing() *core.QSizeF {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQSizeFFromPointer(C.Q3DBars_BarSpacing(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QSizeF).DestroyQSizeF)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DBars) ValueAxis() *QValue3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQValue3DAxisFromPointer(C.Q3DBars_ValueAxis(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DBars) IsBarSpacingRelative() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DBars_IsBarSpacingRelative(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *Q3DBars) IsMultiSeriesUniform() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DBars_IsMultiSeriesUniform(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQ3DBars_MetaObject
-func callbackQ3DBars_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQ3DBarsFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *Q3DBars) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *Q3DBars) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *Q3DBars) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DBars_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DBars) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DBars_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DBars) BarThickness() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DBars_BarThickness(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DBars) FloorLevel() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DBars_FloorLevel(ptr.Pointer()))
-	}
-	return 0
 }
 
 func (ptr *Q3DBars) __axes_atList(i int) *QAbstract3DAxis {
@@ -892,66 +816,17 @@ func NewQ3DCamera(parent core.QObject_ITF) *Q3DCamera {
 	return NewQ3DCameraFromPointer(C.Q3DCamera_NewQ3DCamera(core.PointerFromQObject(parent)))
 }
 
-func Q3DCamera_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *Q3DCamera) CameraPreset() Q3DCamera__CameraPreset {
+	if ptr.Pointer() != nil {
+		return Q3DCamera__CameraPreset(C.Q3DCamera_CameraPreset(ptr.Pointer()))
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DCamera_Q3DCamera_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DCamera) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DCamera_Q3DCamera_Tr(sC, cC, C.int(int32(n))))
-}
-
-func Q3DCamera_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DCamera_Q3DCamera_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DCamera) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DCamera_Q3DCamera_TrUtf8(sC, cC, C.int(int32(n))))
+	return 0
 }
 
 //export callbackQ3DCamera_CameraPresetChanged
 func callbackQ3DCamera_CameraPresetChanged(ptr unsafe.Pointer, preset C.longlong) {
 	if signal := qt.GetSignal(ptr, "cameraPresetChanged"); signal != nil {
-		signal.(func(Q3DCamera__CameraPreset))(Q3DCamera__CameraPreset(preset))
+		(*(*func(Q3DCamera__CameraPreset))(signal))(Q3DCamera__CameraPreset(preset))
 	}
 
 }
@@ -964,12 +839,13 @@ func (ptr *Q3DCamera) ConnectCameraPresetChanged(f func(preset Q3DCamera__Camera
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "cameraPresetChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "cameraPresetChanged", func(preset Q3DCamera__CameraPreset) {
-				signal.(func(Q3DCamera__CameraPreset))(preset)
+			f := func(preset Q3DCamera__CameraPreset) {
+				(*(*func(Q3DCamera__CameraPreset))(signal))(preset)
 				f(preset)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "cameraPresetChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "cameraPresetChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "cameraPresetChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -990,7 +866,7 @@ func (ptr *Q3DCamera) CameraPresetChanged(preset Q3DCamera__CameraPreset) {
 //export callbackQ3DCamera_CopyValuesFrom
 func callbackQ3DCamera_CopyValuesFrom(ptr unsafe.Pointer, source unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "copyValuesFrom"); signal != nil {
-		signal.(func(*Q3DObject))(NewQ3DObjectFromPointer(source))
+		(*(*func(*Q3DObject))(signal))(NewQ3DObjectFromPointer(source))
 	} else {
 		NewQ3DCameraFromPointer(ptr).CopyValuesFromDefault(NewQ3DObjectFromPointer(source))
 	}
@@ -1000,12 +876,13 @@ func (ptr *Q3DCamera) ConnectCopyValuesFrom(f func(source *Q3DObject)) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "copyValuesFrom"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "copyValuesFrom", func(source *Q3DObject) {
-				signal.(func(*Q3DObject))(source)
+			f := func(source *Q3DObject) {
+				(*(*func(*Q3DObject))(signal))(source)
 				f(source)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "copyValuesFrom", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "copyValuesFrom", f)
+			qt.ConnectSignal(ptr.Pointer(), "copyValuesFrom", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1029,10 +906,17 @@ func (ptr *Q3DCamera) CopyValuesFromDefault(source Q3DObject_ITF) {
 	}
 }
 
+func (ptr *Q3DCamera) MaxZoomLevel() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DCamera_MaxZoomLevel(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DCamera_MaxZoomLevelChanged
 func callbackQ3DCamera_MaxZoomLevelChanged(ptr unsafe.Pointer, zoomLevel C.float) {
 	if signal := qt.GetSignal(ptr, "maxZoomLevelChanged"); signal != nil {
-		signal.(func(float32))(float32(zoomLevel))
+		(*(*func(float32))(signal))(float32(zoomLevel))
 	}
 
 }
@@ -1045,12 +929,13 @@ func (ptr *Q3DCamera) ConnectMaxZoomLevelChanged(f func(zoomLevel float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "maxZoomLevelChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "maxZoomLevelChanged", func(zoomLevel float32) {
-				signal.(func(float32))(zoomLevel)
+			f := func(zoomLevel float32) {
+				(*(*func(float32))(signal))(zoomLevel)
 				f(zoomLevel)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "maxZoomLevelChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "maxZoomLevelChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "maxZoomLevelChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1068,10 +953,17 @@ func (ptr *Q3DCamera) MaxZoomLevelChanged(zoomLevel float32) {
 	}
 }
 
+func (ptr *Q3DCamera) MinZoomLevel() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DCamera_MinZoomLevel(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DCamera_MinZoomLevelChanged
 func callbackQ3DCamera_MinZoomLevelChanged(ptr unsafe.Pointer, zoomLevel C.float) {
 	if signal := qt.GetSignal(ptr, "minZoomLevelChanged"); signal != nil {
-		signal.(func(float32))(float32(zoomLevel))
+		(*(*func(float32))(signal))(float32(zoomLevel))
 	}
 
 }
@@ -1084,12 +976,13 @@ func (ptr *Q3DCamera) ConnectMinZoomLevelChanged(f func(zoomLevel float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "minZoomLevelChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "minZoomLevelChanged", func(zoomLevel float32) {
-				signal.(func(float32))(zoomLevel)
+			f := func(zoomLevel float32) {
+				(*(*func(float32))(signal))(zoomLevel)
 				f(zoomLevel)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "minZoomLevelChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "minZoomLevelChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "minZoomLevelChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1167,10 +1060,19 @@ func (ptr *Q3DCamera) SetZoomLevel(zoomLevel float32) {
 	}
 }
 
+func (ptr *Q3DCamera) Target() *gui.QVector3D {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQVector3DFromPointer(C.Q3DCamera_Target(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DCamera_TargetChanged
 func callbackQ3DCamera_TargetChanged(ptr unsafe.Pointer, target unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "targetChanged"); signal != nil {
-		signal.(func(*gui.QVector3D))(gui.NewQVector3DFromPointer(target))
+		(*(*func(*gui.QVector3D))(signal))(gui.NewQVector3DFromPointer(target))
 	}
 
 }
@@ -1183,12 +1085,13 @@ func (ptr *Q3DCamera) ConnectTargetChanged(f func(target *gui.QVector3D)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "targetChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "targetChanged", func(target *gui.QVector3D) {
-				signal.(func(*gui.QVector3D))(target)
+			f := func(target *gui.QVector3D) {
+				(*(*func(*gui.QVector3D))(signal))(target)
 				f(target)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "targetChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "targetChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "targetChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1206,10 +1109,17 @@ func (ptr *Q3DCamera) TargetChanged(target gui.QVector3D_ITF) {
 	}
 }
 
+func (ptr *Q3DCamera) WrapXRotation() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DCamera_WrapXRotation(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQ3DCamera_WrapXRotationChanged
 func callbackQ3DCamera_WrapXRotationChanged(ptr unsafe.Pointer, isEnabled C.char) {
 	if signal := qt.GetSignal(ptr, "wrapXRotationChanged"); signal != nil {
-		signal.(func(bool))(int8(isEnabled) != 0)
+		(*(*func(bool))(signal))(int8(isEnabled) != 0)
 	}
 
 }
@@ -1222,12 +1132,13 @@ func (ptr *Q3DCamera) ConnectWrapXRotationChanged(f func(isEnabled bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "wrapXRotationChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "wrapXRotationChanged", func(isEnabled bool) {
-				signal.(func(bool))(isEnabled)
+			f := func(isEnabled bool) {
+				(*(*func(bool))(signal))(isEnabled)
 				f(isEnabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "wrapXRotationChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "wrapXRotationChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "wrapXRotationChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1245,10 +1156,17 @@ func (ptr *Q3DCamera) WrapXRotationChanged(isEnabled bool) {
 	}
 }
 
+func (ptr *Q3DCamera) WrapYRotation() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DCamera_WrapYRotation(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQ3DCamera_WrapYRotationChanged
 func callbackQ3DCamera_WrapYRotationChanged(ptr unsafe.Pointer, isEnabled C.char) {
 	if signal := qt.GetSignal(ptr, "wrapYRotationChanged"); signal != nil {
-		signal.(func(bool))(int8(isEnabled) != 0)
+		(*(*func(bool))(signal))(int8(isEnabled) != 0)
 	}
 
 }
@@ -1261,12 +1179,13 @@ func (ptr *Q3DCamera) ConnectWrapYRotationChanged(f func(isEnabled bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "wrapYRotationChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "wrapYRotationChanged", func(isEnabled bool) {
-				signal.(func(bool))(isEnabled)
+			f := func(isEnabled bool) {
+				(*(*func(bool))(signal))(isEnabled)
 				f(isEnabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "wrapYRotationChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "wrapYRotationChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "wrapYRotationChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1284,10 +1203,17 @@ func (ptr *Q3DCamera) WrapYRotationChanged(isEnabled bool) {
 	}
 }
 
+func (ptr *Q3DCamera) XRotation() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DCamera_XRotation(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DCamera_XRotationChanged
 func callbackQ3DCamera_XRotationChanged(ptr unsafe.Pointer, rotation C.float) {
 	if signal := qt.GetSignal(ptr, "xRotationChanged"); signal != nil {
-		signal.(func(float32))(float32(rotation))
+		(*(*func(float32))(signal))(float32(rotation))
 	}
 
 }
@@ -1300,12 +1226,13 @@ func (ptr *Q3DCamera) ConnectXRotationChanged(f func(rotation float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "xRotationChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "xRotationChanged", func(rotation float32) {
-				signal.(func(float32))(rotation)
+			f := func(rotation float32) {
+				(*(*func(float32))(signal))(rotation)
 				f(rotation)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "xRotationChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "xRotationChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "xRotationChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1323,10 +1250,17 @@ func (ptr *Q3DCamera) XRotationChanged(rotation float32) {
 	}
 }
 
+func (ptr *Q3DCamera) YRotation() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DCamera_YRotation(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DCamera_YRotationChanged
 func callbackQ3DCamera_YRotationChanged(ptr unsafe.Pointer, rotation C.float) {
 	if signal := qt.GetSignal(ptr, "yRotationChanged"); signal != nil {
-		signal.(func(float32))(float32(rotation))
+		(*(*func(float32))(signal))(float32(rotation))
 	}
 
 }
@@ -1339,12 +1273,13 @@ func (ptr *Q3DCamera) ConnectYRotationChanged(f func(rotation float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "yRotationChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "yRotationChanged", func(rotation float32) {
-				signal.(func(float32))(rotation)
+			f := func(rotation float32) {
+				(*(*func(float32))(signal))(rotation)
 				f(rotation)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "yRotationChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "yRotationChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "yRotationChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1362,10 +1297,17 @@ func (ptr *Q3DCamera) YRotationChanged(rotation float32) {
 	}
 }
 
+func (ptr *Q3DCamera) ZoomLevel() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DCamera_ZoomLevel(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DCamera_ZoomLevelChanged
 func callbackQ3DCamera_ZoomLevelChanged(ptr unsafe.Pointer, zoomLevel C.float) {
 	if signal := qt.GetSignal(ptr, "zoomLevelChanged"); signal != nil {
-		signal.(func(float32))(float32(zoomLevel))
+		(*(*func(float32))(signal))(float32(zoomLevel))
 	}
 
 }
@@ -1378,12 +1320,13 @@ func (ptr *Q3DCamera) ConnectZoomLevelChanged(f func(zoomLevel float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "zoomLevelChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "zoomLevelChanged", func(zoomLevel float32) {
-				signal.(func(float32))(zoomLevel)
+			f := func(zoomLevel float32) {
+				(*(*func(float32))(signal))(zoomLevel)
 				f(zoomLevel)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "zoomLevelChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "zoomLevelChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "zoomLevelChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1404,7 +1347,7 @@ func (ptr *Q3DCamera) ZoomLevelChanged(zoomLevel float32) {
 //export callbackQ3DCamera_DestroyQ3DCamera
 func callbackQ3DCamera_DestroyQ3DCamera(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~Q3DCamera"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQ3DCameraFromPointer(ptr).DestroyQ3DCameraDefault()
 	}
@@ -1414,12 +1357,13 @@ func (ptr *Q3DCamera) ConnectDestroyQ3DCamera(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~Q3DCamera"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DCamera", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DCamera", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DCamera", f)
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DCamera", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1445,115 +1389,6 @@ func (ptr *Q3DCamera) DestroyQ3DCameraDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *Q3DCamera) CameraPreset() Q3DCamera__CameraPreset {
-	if ptr.Pointer() != nil {
-		return Q3DCamera__CameraPreset(C.Q3DCamera_CameraPreset(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DCamera) Target() *gui.QVector3D {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.Q3DCamera_Target(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DCamera) WrapXRotation() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DCamera_WrapXRotation(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *Q3DCamera) WrapYRotation() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DCamera_WrapYRotation(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQ3DCamera_MetaObject
-func callbackQ3DCamera_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQ3DCameraFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *Q3DCamera) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *Q3DCamera) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *Q3DCamera) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DCamera_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DCamera) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DCamera_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DCamera) MaxZoomLevel() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DCamera_MaxZoomLevel(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DCamera) MinZoomLevel() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DCamera_MinZoomLevel(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DCamera) XRotation() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DCamera_XRotation(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DCamera) YRotation() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DCamera_YRotation(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DCamera) ZoomLevel() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DCamera_ZoomLevel(ptr.Pointer()))
-	}
-	return 0
 }
 
 type Q3DInputHandler struct {
@@ -1597,66 +1432,38 @@ func NewQ3DInputHandler(parent core.QObject_ITF) *Q3DInputHandler {
 	return NewQ3DInputHandlerFromPointer(C.Q3DInputHandler_NewQ3DInputHandler(core.PointerFromQObject(parent)))
 }
 
-func Q3DInputHandler_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *Q3DInputHandler) IsRotationEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DInputHandler_IsRotationEnabled(ptr.Pointer())) != 0
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DInputHandler_Q3DInputHandler_Tr(sC, cC, C.int(int32(n))))
+	return false
 }
 
-func (ptr *Q3DInputHandler) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *Q3DInputHandler) IsSelectionEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DInputHandler_IsSelectionEnabled(ptr.Pointer())) != 0
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DInputHandler_Q3DInputHandler_Tr(sC, cC, C.int(int32(n))))
+	return false
 }
 
-func Q3DInputHandler_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *Q3DInputHandler) IsZoomAtTargetEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DInputHandler_IsZoomAtTargetEnabled(ptr.Pointer())) != 0
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DInputHandler_Q3DInputHandler_TrUtf8(sC, cC, C.int(int32(n))))
+	return false
 }
 
-func (ptr *Q3DInputHandler) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *Q3DInputHandler) IsZoomEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DInputHandler_IsZoomEnabled(ptr.Pointer())) != 0
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DInputHandler_Q3DInputHandler_TrUtf8(sC, cC, C.int(int32(n))))
+	return false
 }
 
 //export callbackQ3DInputHandler_MouseMoveEvent
 func callbackQ3DInputHandler_MouseMoveEvent(ptr unsafe.Pointer, event unsafe.Pointer, mousePos unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "mouseMoveEvent"); signal != nil {
-		signal.(func(*gui.QMouseEvent, *core.QPoint))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
+		(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	} else {
 		NewQ3DInputHandlerFromPointer(ptr).MouseMoveEventDefault(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	}
@@ -1666,12 +1473,13 @@ func (ptr *Q3DInputHandler) ConnectMouseMoveEvent(f func(event *gui.QMouseEvent,
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "mouseMoveEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "mouseMoveEvent", func(event *gui.QMouseEvent, mousePos *core.QPoint) {
-				signal.(func(*gui.QMouseEvent, *core.QPoint))(event, mousePos)
+			f := func(event *gui.QMouseEvent, mousePos *core.QPoint) {
+				(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(event, mousePos)
 				f(event, mousePos)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "mouseMoveEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "mouseMoveEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "mouseMoveEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1698,7 +1506,7 @@ func (ptr *Q3DInputHandler) MouseMoveEventDefault(event gui.QMouseEvent_ITF, mou
 //export callbackQ3DInputHandler_MousePressEvent
 func callbackQ3DInputHandler_MousePressEvent(ptr unsafe.Pointer, event unsafe.Pointer, mousePos unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "mousePressEvent"); signal != nil {
-		signal.(func(*gui.QMouseEvent, *core.QPoint))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
+		(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	} else {
 		NewQ3DInputHandlerFromPointer(ptr).MousePressEventDefault(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	}
@@ -1708,12 +1516,13 @@ func (ptr *Q3DInputHandler) ConnectMousePressEvent(f func(event *gui.QMouseEvent
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "mousePressEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "mousePressEvent", func(event *gui.QMouseEvent, mousePos *core.QPoint) {
-				signal.(func(*gui.QMouseEvent, *core.QPoint))(event, mousePos)
+			f := func(event *gui.QMouseEvent, mousePos *core.QPoint) {
+				(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(event, mousePos)
 				f(event, mousePos)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "mousePressEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "mousePressEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "mousePressEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1740,7 +1549,7 @@ func (ptr *Q3DInputHandler) MousePressEventDefault(event gui.QMouseEvent_ITF, mo
 //export callbackQ3DInputHandler_MouseReleaseEvent
 func callbackQ3DInputHandler_MouseReleaseEvent(ptr unsafe.Pointer, event unsafe.Pointer, mousePos unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "mouseReleaseEvent"); signal != nil {
-		signal.(func(*gui.QMouseEvent, *core.QPoint))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
+		(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	} else {
 		NewQ3DInputHandlerFromPointer(ptr).MouseReleaseEventDefault(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	}
@@ -1750,12 +1559,13 @@ func (ptr *Q3DInputHandler) ConnectMouseReleaseEvent(f func(event *gui.QMouseEve
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "mouseReleaseEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "mouseReleaseEvent", func(event *gui.QMouseEvent, mousePos *core.QPoint) {
-				signal.(func(*gui.QMouseEvent, *core.QPoint))(event, mousePos)
+			f := func(event *gui.QMouseEvent, mousePos *core.QPoint) {
+				(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(event, mousePos)
 				f(event, mousePos)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "mouseReleaseEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "mouseReleaseEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "mouseReleaseEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1782,7 +1592,7 @@ func (ptr *Q3DInputHandler) MouseReleaseEventDefault(event gui.QMouseEvent_ITF, 
 //export callbackQ3DInputHandler_RotationEnabledChanged
 func callbackQ3DInputHandler_RotationEnabledChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "rotationEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -1795,12 +1605,13 @@ func (ptr *Q3DInputHandler) ConnectRotationEnabledChanged(f func(enable bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rotationEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rotationEnabledChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rotationEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rotationEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rotationEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1821,7 +1632,7 @@ func (ptr *Q3DInputHandler) RotationEnabledChanged(enable bool) {
 //export callbackQ3DInputHandler_SelectionEnabledChanged
 func callbackQ3DInputHandler_SelectionEnabledChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "selectionEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -1834,12 +1645,13 @@ func (ptr *Q3DInputHandler) ConnectSelectionEnabledChanged(f func(enable bool)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "selectionEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectionEnabledChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "selectionEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectionEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "selectionEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1884,7 +1696,7 @@ func (ptr *Q3DInputHandler) SetZoomEnabled(enable bool) {
 //export callbackQ3DInputHandler_WheelEvent
 func callbackQ3DInputHandler_WheelEvent(ptr unsafe.Pointer, event unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "wheelEvent"); signal != nil {
-		signal.(func(*gui.QWheelEvent))(gui.NewQWheelEventFromPointer(event))
+		(*(*func(*gui.QWheelEvent))(signal))(gui.NewQWheelEventFromPointer(event))
 	} else {
 		NewQ3DInputHandlerFromPointer(ptr).WheelEventDefault(gui.NewQWheelEventFromPointer(event))
 	}
@@ -1894,12 +1706,13 @@ func (ptr *Q3DInputHandler) ConnectWheelEvent(f func(event *gui.QWheelEvent)) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "wheelEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "wheelEvent", func(event *gui.QWheelEvent) {
-				signal.(func(*gui.QWheelEvent))(event)
+			f := func(event *gui.QWheelEvent) {
+				(*(*func(*gui.QWheelEvent))(signal))(event)
 				f(event)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "wheelEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "wheelEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "wheelEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1926,7 +1739,7 @@ func (ptr *Q3DInputHandler) WheelEventDefault(event gui.QWheelEvent_ITF) {
 //export callbackQ3DInputHandler_ZoomAtTargetEnabledChanged
 func callbackQ3DInputHandler_ZoomAtTargetEnabledChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "zoomAtTargetEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -1939,12 +1752,13 @@ func (ptr *Q3DInputHandler) ConnectZoomAtTargetEnabledChanged(f func(enable bool
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "zoomAtTargetEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "zoomAtTargetEnabledChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "zoomAtTargetEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "zoomAtTargetEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "zoomAtTargetEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -1965,7 +1779,7 @@ func (ptr *Q3DInputHandler) ZoomAtTargetEnabledChanged(enable bool) {
 //export callbackQ3DInputHandler_ZoomEnabledChanged
 func callbackQ3DInputHandler_ZoomEnabledChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "zoomEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -1978,12 +1792,13 @@ func (ptr *Q3DInputHandler) ConnectZoomEnabledChanged(f func(enable bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "zoomEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "zoomEnabledChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "zoomEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "zoomEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "zoomEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2004,7 +1819,7 @@ func (ptr *Q3DInputHandler) ZoomEnabledChanged(enable bool) {
 //export callbackQ3DInputHandler_DestroyQ3DInputHandler
 func callbackQ3DInputHandler_DestroyQ3DInputHandler(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~Q3DInputHandler"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQ3DInputHandlerFromPointer(ptr).DestroyQ3DInputHandlerDefault()
 	}
@@ -2014,12 +1829,13 @@ func (ptr *Q3DInputHandler) ConnectDestroyQ3DInputHandler(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~Q3DInputHandler"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DInputHandler", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DInputHandler", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DInputHandler", f)
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DInputHandler", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2035,7 +1851,6 @@ func (ptr *Q3DInputHandler) DestroyQ3DInputHandler() {
 	if ptr.Pointer() != nil {
 		C.Q3DInputHandler_DestroyQ3DInputHandler(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -2043,80 +1858,7 @@ func (ptr *Q3DInputHandler) DestroyQ3DInputHandlerDefault() {
 	if ptr.Pointer() != nil {
 		C.Q3DInputHandler_DestroyQ3DInputHandlerDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *Q3DInputHandler) IsRotationEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DInputHandler_IsRotationEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *Q3DInputHandler) IsSelectionEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DInputHandler_IsSelectionEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *Q3DInputHandler) IsZoomAtTargetEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DInputHandler_IsZoomAtTargetEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *Q3DInputHandler) IsZoomEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DInputHandler_IsZoomEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQ3DInputHandler_MetaObject
-func callbackQ3DInputHandler_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQ3DInputHandlerFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *Q3DInputHandler) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *Q3DInputHandler) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *Q3DInputHandler) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DInputHandler_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DInputHandler) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DInputHandler_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type Q3DLight struct {
@@ -2160,73 +1902,10 @@ func NewQ3DLight(parent core.QObject_ITF) *Q3DLight {
 	return NewQ3DLightFromPointer(C.Q3DLight_NewQ3DLight(core.PointerFromQObject(parent)))
 }
 
-func Q3DLight_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DLight_Q3DLight_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DLight) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DLight_Q3DLight_Tr(sC, cC, C.int(int32(n))))
-}
-
-func Q3DLight_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DLight_Q3DLight_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DLight) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DLight_Q3DLight_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DLight) IsAutoPosition() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DLight_IsAutoPosition(ptr.Pointer()) != 0
-	}
-	return false
-}
-
 //export callbackQ3DLight_AutoPositionChanged
 func callbackQ3DLight_AutoPositionChanged(ptr unsafe.Pointer, autoPosition C.char) {
 	if signal := qt.GetSignal(ptr, "autoPositionChanged"); signal != nil {
-		signal.(func(bool))(int8(autoPosition) != 0)
+		(*(*func(bool))(signal))(int8(autoPosition) != 0)
 	}
 
 }
@@ -2239,12 +1918,13 @@ func (ptr *Q3DLight) ConnectAutoPositionChanged(f func(autoPosition bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "autoPositionChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "autoPositionChanged", func(autoPosition bool) {
-				signal.(func(bool))(autoPosition)
+			f := func(autoPosition bool) {
+				(*(*func(bool))(signal))(autoPosition)
 				f(autoPosition)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "autoPositionChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "autoPositionChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "autoPositionChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2262,6 +1942,13 @@ func (ptr *Q3DLight) AutoPositionChanged(autoPosition bool) {
 	}
 }
 
+func (ptr *Q3DLight) IsAutoPosition() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DLight_IsAutoPosition(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 func (ptr *Q3DLight) SetAutoPosition(enabled bool) {
 	if ptr.Pointer() != nil {
 		C.Q3DLight_SetAutoPosition(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(enabled))))
@@ -2271,7 +1958,7 @@ func (ptr *Q3DLight) SetAutoPosition(enabled bool) {
 //export callbackQ3DLight_DestroyQ3DLight
 func callbackQ3DLight_DestroyQ3DLight(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~Q3DLight"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQ3DLightFromPointer(ptr).DestroyQ3DLightDefault()
 	}
@@ -2281,12 +1968,13 @@ func (ptr *Q3DLight) ConnectDestroyQ3DLight(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~Q3DLight"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DLight", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DLight", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DLight", f)
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DLight", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2302,7 +1990,6 @@ func (ptr *Q3DLight) DestroyQ3DLight() {
 	if ptr.Pointer() != nil {
 		C.Q3DLight_DestroyQ3DLight(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -2310,52 +1997,7 @@ func (ptr *Q3DLight) DestroyQ3DLightDefault() {
 	if ptr.Pointer() != nil {
 		C.Q3DLight_DestroyQ3DLightDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-//export callbackQ3DLight_MetaObject
-func callbackQ3DLight_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQ3DLightFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *Q3DLight) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *Q3DLight) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *Q3DLight) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DLight_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DLight) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DLight_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type Q3DObject struct {
@@ -2399,73 +2041,10 @@ func NewQ3DObject(parent core.QObject_ITF) *Q3DObject {
 	return NewQ3DObjectFromPointer(C.Q3DObject_NewQ3DObject(core.PointerFromQObject(parent)))
 }
 
-func (ptr *Q3DObject) ParentScene() *Q3DScene {
-	if ptr.Pointer() != nil {
-		return NewQ3DSceneFromPointer(C.Q3DObject_ParentScene(ptr.Pointer()))
-	}
-	return nil
-}
-
-func Q3DObject_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DObject_Q3DObject_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DObject) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DObject_Q3DObject_Tr(sC, cC, C.int(int32(n))))
-}
-
-func Q3DObject_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DObject_Q3DObject_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DObject) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DObject_Q3DObject_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 //export callbackQ3DObject_CopyValuesFrom
 func callbackQ3DObject_CopyValuesFrom(ptr unsafe.Pointer, source unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "copyValuesFrom"); signal != nil {
-		signal.(func(*Q3DObject))(NewQ3DObjectFromPointer(source))
+		(*(*func(*Q3DObject))(signal))(NewQ3DObjectFromPointer(source))
 	} else {
 		NewQ3DObjectFromPointer(ptr).CopyValuesFromDefault(NewQ3DObjectFromPointer(source))
 	}
@@ -2475,12 +2054,13 @@ func (ptr *Q3DObject) ConnectCopyValuesFrom(f func(source *Q3DObject)) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "copyValuesFrom"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "copyValuesFrom", func(source *Q3DObject) {
-				signal.(func(*Q3DObject))(source)
+			f := func(source *Q3DObject) {
+				(*(*func(*Q3DObject))(signal))(source)
 				f(source)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "copyValuesFrom", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "copyValuesFrom", f)
+			qt.ConnectSignal(ptr.Pointer(), "copyValuesFrom", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2504,10 +2084,33 @@ func (ptr *Q3DObject) CopyValuesFromDefault(source Q3DObject_ITF) {
 	}
 }
 
+func (ptr *Q3DObject) IsDirty() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DObject_IsDirty(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DObject) ParentScene() *Q3DScene {
+	if ptr.Pointer() != nil {
+		return NewQ3DSceneFromPointer(C.Q3DObject_ParentScene(ptr.Pointer()))
+	}
+	return nil
+}
+
+func (ptr *Q3DObject) Position() *gui.QVector3D {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQVector3DFromPointer(C.Q3DObject_Position(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DObject_PositionChanged
 func callbackQ3DObject_PositionChanged(ptr unsafe.Pointer, position unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "positionChanged"); signal != nil {
-		signal.(func(*gui.QVector3D))(gui.NewQVector3DFromPointer(position))
+		(*(*func(*gui.QVector3D))(signal))(gui.NewQVector3DFromPointer(position))
 	}
 
 }
@@ -2520,12 +2123,13 @@ func (ptr *Q3DObject) ConnectPositionChanged(f func(position *gui.QVector3D)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "positionChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "positionChanged", func(position *gui.QVector3D) {
-				signal.(func(*gui.QVector3D))(position)
+			f := func(position *gui.QVector3D) {
+				(*(*func(*gui.QVector3D))(signal))(position)
 				f(position)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "positionChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "positionChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "positionChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2558,7 +2162,7 @@ func (ptr *Q3DObject) SetPosition(position gui.QVector3D_ITF) {
 //export callbackQ3DObject_DestroyQ3DObject
 func callbackQ3DObject_DestroyQ3DObject(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~Q3DObject"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQ3DObjectFromPointer(ptr).DestroyQ3DObjectDefault()
 	}
@@ -2568,12 +2172,13 @@ func (ptr *Q3DObject) ConnectDestroyQ3DObject(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~Q3DObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DObject", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DObject", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DObject", f)
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DObject", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2599,66 +2204,6 @@ func (ptr *Q3DObject) DestroyQ3DObjectDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *Q3DObject) Position() *gui.QVector3D {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.Q3DObject_Position(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DObject) IsDirty() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DObject_IsDirty(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQ3DObject_MetaObject
-func callbackQ3DObject_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQ3DObjectFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *Q3DObject) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *Q3DObject) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *Q3DObject) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DObject_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DObject) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DObject_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type Q3DScatter struct {
@@ -2702,62 +2247,6 @@ func NewQ3DScatter(format gui.QSurfaceFormat_ITF, parent gui.QWindow_ITF) *Q3DSc
 	return NewQ3DScatterFromPointer(C.Q3DScatter_NewQ3DScatter(gui.PointerFromQSurfaceFormat(format), gui.PointerFromQWindow(parent)))
 }
 
-func Q3DScatter_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DScatter_Q3DScatter_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DScatter) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DScatter_Q3DScatter_Tr(sC, cC, C.int(int32(n))))
-}
-
-func Q3DScatter_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DScatter_Q3DScatter_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DScatter) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DScatter_Q3DScatter_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 func (ptr *Q3DScatter) AddAxis(axis QValue3DAxis_ITF) {
 	if ptr.Pointer() != nil {
 		C.Q3DScatter_AddAxis(ptr.Pointer(), PointerFromQValue3DAxis(axis))
@@ -2770,10 +2259,31 @@ func (ptr *Q3DScatter) AddSeries(series QScatter3DSeries_ITF) {
 	}
 }
 
+func (ptr *Q3DScatter) Axes() []*QValue3DAxis {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []*QValue3DAxis {
+			out := make([]*QValue3DAxis, int(l.len))
+			tmpList := NewQ3DScatterFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__axes_atList(i)
+			}
+			return out
+		}(C.Q3DScatter_Axes(ptr.Pointer()))
+	}
+	return make([]*QValue3DAxis, 0)
+}
+
+func (ptr *Q3DScatter) AxisX() *QValue3DAxis {
+	if ptr.Pointer() != nil {
+		return NewQValue3DAxisFromPointer(C.Q3DScatter_AxisX(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DScatter_AxisXChanged
 func callbackQ3DScatter_AxisXChanged(ptr unsafe.Pointer, axis unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "axisXChanged"); signal != nil {
-		signal.(func(*QValue3DAxis))(NewQValue3DAxisFromPointer(axis))
+		(*(*func(*QValue3DAxis))(signal))(NewQValue3DAxisFromPointer(axis))
 	}
 
 }
@@ -2786,12 +2296,13 @@ func (ptr *Q3DScatter) ConnectAxisXChanged(f func(axis *QValue3DAxis)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "axisXChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "axisXChanged", func(axis *QValue3DAxis) {
-				signal.(func(*QValue3DAxis))(axis)
+			f := func(axis *QValue3DAxis) {
+				(*(*func(*QValue3DAxis))(signal))(axis)
 				f(axis)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "axisXChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "axisXChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "axisXChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2809,10 +2320,17 @@ func (ptr *Q3DScatter) AxisXChanged(axis QValue3DAxis_ITF) {
 	}
 }
 
+func (ptr *Q3DScatter) AxisY() *QValue3DAxis {
+	if ptr.Pointer() != nil {
+		return NewQValue3DAxisFromPointer(C.Q3DScatter_AxisY(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DScatter_AxisYChanged
 func callbackQ3DScatter_AxisYChanged(ptr unsafe.Pointer, axis unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "axisYChanged"); signal != nil {
-		signal.(func(*QValue3DAxis))(NewQValue3DAxisFromPointer(axis))
+		(*(*func(*QValue3DAxis))(signal))(NewQValue3DAxisFromPointer(axis))
 	}
 
 }
@@ -2825,12 +2343,13 @@ func (ptr *Q3DScatter) ConnectAxisYChanged(f func(axis *QValue3DAxis)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "axisYChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "axisYChanged", func(axis *QValue3DAxis) {
-				signal.(func(*QValue3DAxis))(axis)
+			f := func(axis *QValue3DAxis) {
+				(*(*func(*QValue3DAxis))(signal))(axis)
 				f(axis)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "axisYChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "axisYChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "axisYChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2848,10 +2367,17 @@ func (ptr *Q3DScatter) AxisYChanged(axis QValue3DAxis_ITF) {
 	}
 }
 
+func (ptr *Q3DScatter) AxisZ() *QValue3DAxis {
+	if ptr.Pointer() != nil {
+		return NewQValue3DAxisFromPointer(C.Q3DScatter_AxisZ(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DScatter_AxisZChanged
 func callbackQ3DScatter_AxisZChanged(ptr unsafe.Pointer, axis unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "axisZChanged"); signal != nil {
-		signal.(func(*QValue3DAxis))(NewQValue3DAxisFromPointer(axis))
+		(*(*func(*QValue3DAxis))(signal))(NewQValue3DAxisFromPointer(axis))
 	}
 
 }
@@ -2864,12 +2390,13 @@ func (ptr *Q3DScatter) ConnectAxisZChanged(f func(axis *QValue3DAxis)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "axisZChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "axisZChanged", func(axis *QValue3DAxis) {
-				signal.(func(*QValue3DAxis))(axis)
+			f := func(axis *QValue3DAxis) {
+				(*(*func(*QValue3DAxis))(signal))(axis)
 				f(axis)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "axisZChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "axisZChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "axisZChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2899,10 +2426,17 @@ func (ptr *Q3DScatter) RemoveSeries(series QScatter3DSeries_ITF) {
 	}
 }
 
+func (ptr *Q3DScatter) SelectedSeries() *QScatter3DSeries {
+	if ptr.Pointer() != nil {
+		return NewQScatter3DSeriesFromPointer(C.Q3DScatter_SelectedSeries(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DScatter_SelectedSeriesChanged
 func callbackQ3DScatter_SelectedSeriesChanged(ptr unsafe.Pointer, series unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "selectedSeriesChanged"); signal != nil {
-		signal.(func(*QScatter3DSeries))(NewQScatter3DSeriesFromPointer(series))
+		(*(*func(*QScatter3DSeries))(signal))(NewQScatter3DSeriesFromPointer(series))
 	}
 
 }
@@ -2915,12 +2449,13 @@ func (ptr *Q3DScatter) ConnectSelectedSeriesChanged(f func(series *QScatter3DSer
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "selectedSeriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", func(series *QScatter3DSeries) {
-				signal.(func(*QScatter3DSeries))(series)
+			f := func(series *QScatter3DSeries) {
+				(*(*func(*QScatter3DSeries))(signal))(series)
 				f(series)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2936,6 +2471,20 @@ func (ptr *Q3DScatter) SelectedSeriesChanged(series QScatter3DSeries_ITF) {
 	if ptr.Pointer() != nil {
 		C.Q3DScatter_SelectedSeriesChanged(ptr.Pointer(), PointerFromQScatter3DSeries(series))
 	}
+}
+
+func (ptr *Q3DScatter) SeriesList() []*QScatter3DSeries {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []*QScatter3DSeries {
+			out := make([]*QScatter3DSeries, int(l.len))
+			tmpList := NewQ3DScatterFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__seriesList_atList(i)
+			}
+			return out
+		}(C.Q3DScatter_SeriesList(ptr.Pointer()))
+	}
+	return make([]*QScatter3DSeries, 0)
 }
 
 func (ptr *Q3DScatter) SetAxisX(axis QValue3DAxis_ITF) {
@@ -2959,7 +2508,7 @@ func (ptr *Q3DScatter) SetAxisZ(axis QValue3DAxis_ITF) {
 //export callbackQ3DScatter_DestroyQ3DScatter
 func callbackQ3DScatter_DestroyQ3DScatter(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~Q3DScatter"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQ3DScatterFromPointer(ptr).DestroyQ3DScatterDefault()
 	}
@@ -2969,12 +2518,13 @@ func (ptr *Q3DScatter) ConnectDestroyQ3DScatter(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~Q3DScatter"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DScatter", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DScatter", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DScatter", f)
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DScatter", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -2990,7 +2540,6 @@ func (ptr *Q3DScatter) DestroyQ3DScatter() {
 	if ptr.Pointer() != nil {
 		C.Q3DScatter_DestroyQ3DScatter(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -2998,125 +2547,7 @@ func (ptr *Q3DScatter) DestroyQ3DScatterDefault() {
 	if ptr.Pointer() != nil {
 		C.Q3DScatter_DestroyQ3DScatterDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *Q3DScatter) SeriesList() []*QScatter3DSeries {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*QScatter3DSeries {
-			out := make([]*QScatter3DSeries, int(l.len))
-			tmpList := NewQ3DScatterFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__seriesList_atList(i)
-			}
-			return out
-		}(C.Q3DScatter_SeriesList(ptr.Pointer()))
-	}
-	return make([]*QScatter3DSeries, 0)
-}
-
-func (ptr *Q3DScatter) Axes() []*QValue3DAxis {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*QValue3DAxis {
-			out := make([]*QValue3DAxis, int(l.len))
-			tmpList := NewQ3DScatterFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__axes_atList(i)
-			}
-			return out
-		}(C.Q3DScatter_Axes(ptr.Pointer()))
-	}
-	return make([]*QValue3DAxis, 0)
-}
-
-func (ptr *Q3DScatter) SelectedSeries() *QScatter3DSeries {
-	if ptr.Pointer() != nil {
-		return NewQScatter3DSeriesFromPointer(C.Q3DScatter_SelectedSeries(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DScatter) AxisX() *QValue3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQValue3DAxisFromPointer(C.Q3DScatter_AxisX(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DScatter) AxisY() *QValue3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQValue3DAxisFromPointer(C.Q3DScatter_AxisY(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DScatter) AxisZ() *QValue3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQValue3DAxisFromPointer(C.Q3DScatter_AxisZ(ptr.Pointer()))
-	}
-	return nil
-}
-
-//export callbackQ3DScatter_MetaObject
-func callbackQ3DScatter_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQ3DScatterFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *Q3DScatter) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *Q3DScatter) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *Q3DScatter) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DScatter_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DScatter) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DScatter_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DScatter) __seriesList_atList(i int) *QScatter3DSeries {
-	if ptr.Pointer() != nil {
-		return NewQScatter3DSeriesFromPointer(C.Q3DScatter___seriesList_atList(ptr.Pointer(), C.int(int32(i))))
-	}
-	return nil
-}
-
-func (ptr *Q3DScatter) __seriesList_setList(i QScatter3DSeries_ITF) {
-	if ptr.Pointer() != nil {
-		C.Q3DScatter___seriesList_setList(ptr.Pointer(), PointerFromQScatter3DSeries(i))
-	}
-}
-
-func (ptr *Q3DScatter) __seriesList_newList() unsafe.Pointer {
-	return C.Q3DScatter___seriesList_newList(ptr.Pointer())
 }
 
 func (ptr *Q3DScatter) __axes_atList(i int) *QValue3DAxis {
@@ -3134,6 +2565,23 @@ func (ptr *Q3DScatter) __axes_setList(i QValue3DAxis_ITF) {
 
 func (ptr *Q3DScatter) __axes_newList() unsafe.Pointer {
 	return C.Q3DScatter___axes_newList(ptr.Pointer())
+}
+
+func (ptr *Q3DScatter) __seriesList_atList(i int) *QScatter3DSeries {
+	if ptr.Pointer() != nil {
+		return NewQScatter3DSeriesFromPointer(C.Q3DScatter___seriesList_atList(ptr.Pointer(), C.int(int32(i))))
+	}
+	return nil
+}
+
+func (ptr *Q3DScatter) __seriesList_setList(i QScatter3DSeries_ITF) {
+	if ptr.Pointer() != nil {
+		C.Q3DScatter___seriesList_setList(ptr.Pointer(), PointerFromQScatter3DSeries(i))
+	}
+}
+
+func (ptr *Q3DScatter) __seriesList_newList() unsafe.Pointer {
+	return C.Q3DScatter___seriesList_newList(ptr.Pointer())
 }
 
 type Q3DScene struct {
@@ -3177,92 +2625,17 @@ func NewQ3DScene(parent core.QObject_ITF) *Q3DScene {
 	return NewQ3DSceneFromPointer(C.Q3DScene_NewQ3DScene(core.PointerFromQObject(parent)))
 }
 
-func Q3DScene_InvalidSelectionPoint() *core.QPoint {
-	tmpValue := core.NewQPointFromPointer(C.Q3DScene_Q3DScene_InvalidSelectionPoint())
-	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-	return tmpValue
-}
-
-func (ptr *Q3DScene) InvalidSelectionPoint() *core.QPoint {
-	tmpValue := core.NewQPointFromPointer(C.Q3DScene_Q3DScene_InvalidSelectionPoint())
-	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-	return tmpValue
-}
-
-func Q3DScene_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DScene_Q3DScene_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DScene) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DScene_Q3DScene_Tr(sC, cC, C.int(int32(n))))
-}
-
-func Q3DScene_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DScene_Q3DScene_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DScene) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DScene_Q3DScene_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DScene) IsPointInPrimarySubView(point core.QPoint_ITF) bool {
+func (ptr *Q3DScene) ActiveCamera() *Q3DCamera {
 	if ptr.Pointer() != nil {
-		return C.Q3DScene_IsPointInPrimarySubView(ptr.Pointer(), core.PointerFromQPoint(point)) != 0
+		return NewQ3DCameraFromPointer(C.Q3DScene_ActiveCamera(ptr.Pointer()))
 	}
-	return false
-}
-
-func (ptr *Q3DScene) IsPointInSecondarySubView(point core.QPoint_ITF) bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DScene_IsPointInSecondarySubView(ptr.Pointer(), core.PointerFromQPoint(point)) != 0
-	}
-	return false
+	return nil
 }
 
 //export callbackQ3DScene_ActiveCameraChanged
 func callbackQ3DScene_ActiveCameraChanged(ptr unsafe.Pointer, camera unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "activeCameraChanged"); signal != nil {
-		signal.(func(*Q3DCamera))(NewQ3DCameraFromPointer(camera))
+		(*(*func(*Q3DCamera))(signal))(NewQ3DCameraFromPointer(camera))
 	}
 
 }
@@ -3275,12 +2648,13 @@ func (ptr *Q3DScene) ConnectActiveCameraChanged(f func(camera *Q3DCamera)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "activeCameraChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "activeCameraChanged", func(camera *Q3DCamera) {
-				signal.(func(*Q3DCamera))(camera)
+			f := func(camera *Q3DCamera) {
+				(*(*func(*Q3DCamera))(signal))(camera)
 				f(camera)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "activeCameraChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "activeCameraChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "activeCameraChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3298,10 +2672,17 @@ func (ptr *Q3DScene) ActiveCameraChanged(camera Q3DCamera_ITF) {
 	}
 }
 
+func (ptr *Q3DScene) ActiveLight() *Q3DLight {
+	if ptr.Pointer() != nil {
+		return NewQ3DLightFromPointer(C.Q3DScene_ActiveLight(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DScene_ActiveLightChanged
 func callbackQ3DScene_ActiveLightChanged(ptr unsafe.Pointer, light unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "activeLightChanged"); signal != nil {
-		signal.(func(*Q3DLight))(NewQ3DLightFromPointer(light))
+		(*(*func(*Q3DLight))(signal))(NewQ3DLightFromPointer(light))
 	}
 
 }
@@ -3314,12 +2695,13 @@ func (ptr *Q3DScene) ConnectActiveLightChanged(f func(light *Q3DLight)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "activeLightChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "activeLightChanged", func(light *Q3DLight) {
-				signal.(func(*Q3DLight))(light)
+			f := func(light *Q3DLight) {
+				(*(*func(*Q3DLight))(signal))(light)
 				f(light)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "activeLightChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "activeLightChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "activeLightChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3337,10 +2719,17 @@ func (ptr *Q3DScene) ActiveLightChanged(light Q3DLight_ITF) {
 	}
 }
 
+func (ptr *Q3DScene) DevicePixelRatio() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DScene_DevicePixelRatio(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DScene_DevicePixelRatioChanged
 func callbackQ3DScene_DevicePixelRatioChanged(ptr unsafe.Pointer, pixelRatio C.float) {
 	if signal := qt.GetSignal(ptr, "devicePixelRatioChanged"); signal != nil {
-		signal.(func(float32))(float32(pixelRatio))
+		(*(*func(float32))(signal))(float32(pixelRatio))
 	}
 
 }
@@ -3353,12 +2742,13 @@ func (ptr *Q3DScene) ConnectDevicePixelRatioChanged(f func(pixelRatio float32)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "devicePixelRatioChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "devicePixelRatioChanged", func(pixelRatio float32) {
-				signal.(func(float32))(pixelRatio)
+			f := func(pixelRatio float32) {
+				(*(*func(float32))(signal))(pixelRatio)
 				f(pixelRatio)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "devicePixelRatioChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "devicePixelRatioChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "devicePixelRatioChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3376,10 +2766,19 @@ func (ptr *Q3DScene) DevicePixelRatioChanged(pixelRatio float32) {
 	}
 }
 
+func (ptr *Q3DScene) GraphPositionQuery() *core.QPoint {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQPointFromPointer(C.Q3DScene_GraphPositionQuery(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DScene_GraphPositionQueryChanged
 func callbackQ3DScene_GraphPositionQueryChanged(ptr unsafe.Pointer, position unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "graphPositionQueryChanged"); signal != nil {
-		signal.(func(*core.QPoint))(core.NewQPointFromPointer(position))
+		(*(*func(*core.QPoint))(signal))(core.NewQPointFromPointer(position))
 	}
 
 }
@@ -3392,12 +2791,13 @@ func (ptr *Q3DScene) ConnectGraphPositionQueryChanged(f func(position *core.QPoi
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "graphPositionQueryChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "graphPositionQueryChanged", func(position *core.QPoint) {
-				signal.(func(*core.QPoint))(position)
+			f := func(position *core.QPoint) {
+				(*(*func(*core.QPoint))(signal))(position)
 				f(position)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "graphPositionQueryChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "graphPositionQueryChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "graphPositionQueryChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3415,10 +2815,59 @@ func (ptr *Q3DScene) GraphPositionQueryChanged(position core.QPoint_ITF) {
 	}
 }
 
+func Q3DScene_InvalidSelectionPoint() *core.QPoint {
+	tmpValue := core.NewQPointFromPointer(C.Q3DScene_Q3DScene_InvalidSelectionPoint())
+	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+	return tmpValue
+}
+
+func (ptr *Q3DScene) InvalidSelectionPoint() *core.QPoint {
+	tmpValue := core.NewQPointFromPointer(C.Q3DScene_Q3DScene_InvalidSelectionPoint())
+	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+	return tmpValue
+}
+
+func (ptr *Q3DScene) IsPointInPrimarySubView(point core.QPoint_ITF) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DScene_IsPointInPrimarySubView(ptr.Pointer(), core.PointerFromQPoint(point))) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DScene) IsPointInSecondarySubView(point core.QPoint_ITF) bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DScene_IsPointInSecondarySubView(ptr.Pointer(), core.PointerFromQPoint(point))) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DScene) IsSecondarySubviewOnTop() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DScene_IsSecondarySubviewOnTop(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DScene) IsSlicingActive() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DScene_IsSlicingActive(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DScene) PrimarySubViewport() *core.QRect {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRectFromPointer(C.Q3DScene_PrimarySubViewport(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRect).DestroyQRect)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DScene_PrimarySubViewportChanged
 func callbackQ3DScene_PrimarySubViewportChanged(ptr unsafe.Pointer, subViewport unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "primarySubViewportChanged"); signal != nil {
-		signal.(func(*core.QRect))(core.NewQRectFromPointer(subViewport))
+		(*(*func(*core.QRect))(signal))(core.NewQRectFromPointer(subViewport))
 	}
 
 }
@@ -3431,12 +2880,13 @@ func (ptr *Q3DScene) ConnectPrimarySubViewportChanged(f func(subViewport *core.Q
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "primarySubViewportChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "primarySubViewportChanged", func(subViewport *core.QRect) {
-				signal.(func(*core.QRect))(subViewport)
+			f := func(subViewport *core.QRect) {
+				(*(*func(*core.QRect))(signal))(subViewport)
 				f(subViewport)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "primarySubViewportChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "primarySubViewportChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "primarySubViewportChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3454,10 +2904,19 @@ func (ptr *Q3DScene) PrimarySubViewportChanged(subViewport core.QRect_ITF) {
 	}
 }
 
+func (ptr *Q3DScene) SecondarySubViewport() *core.QRect {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRectFromPointer(C.Q3DScene_SecondarySubViewport(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRect).DestroyQRect)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DScene_SecondarySubViewportChanged
 func callbackQ3DScene_SecondarySubViewportChanged(ptr unsafe.Pointer, subViewport unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "secondarySubViewportChanged"); signal != nil {
-		signal.(func(*core.QRect))(core.NewQRectFromPointer(subViewport))
+		(*(*func(*core.QRect))(signal))(core.NewQRectFromPointer(subViewport))
 	}
 
 }
@@ -3470,12 +2929,13 @@ func (ptr *Q3DScene) ConnectSecondarySubViewportChanged(f func(subViewport *core
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "secondarySubViewportChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "secondarySubViewportChanged", func(subViewport *core.QRect) {
-				signal.(func(*core.QRect))(subViewport)
+			f := func(subViewport *core.QRect) {
+				(*(*func(*core.QRect))(signal))(subViewport)
 				f(subViewport)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "secondarySubViewportChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "secondarySubViewportChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "secondarySubViewportChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3496,7 +2956,7 @@ func (ptr *Q3DScene) SecondarySubViewportChanged(subViewport core.QRect_ITF) {
 //export callbackQ3DScene_SecondarySubviewOnTopChanged
 func callbackQ3DScene_SecondarySubviewOnTopChanged(ptr unsafe.Pointer, isSecondaryOnTop C.char) {
 	if signal := qt.GetSignal(ptr, "secondarySubviewOnTopChanged"); signal != nil {
-		signal.(func(bool))(int8(isSecondaryOnTop) != 0)
+		(*(*func(bool))(signal))(int8(isSecondaryOnTop) != 0)
 	}
 
 }
@@ -3509,12 +2969,13 @@ func (ptr *Q3DScene) ConnectSecondarySubviewOnTopChanged(f func(isSecondaryOnTop
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "secondarySubviewOnTopChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "secondarySubviewOnTopChanged", func(isSecondaryOnTop bool) {
-				signal.(func(bool))(isSecondaryOnTop)
+			f := func(isSecondaryOnTop bool) {
+				(*(*func(bool))(signal))(isSecondaryOnTop)
 				f(isSecondaryOnTop)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "secondarySubviewOnTopChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "secondarySubviewOnTopChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "secondarySubviewOnTopChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3532,10 +2993,19 @@ func (ptr *Q3DScene) SecondarySubviewOnTopChanged(isSecondaryOnTop bool) {
 	}
 }
 
+func (ptr *Q3DScene) SelectionQueryPosition() *core.QPoint {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQPointFromPointer(C.Q3DScene_SelectionQueryPosition(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DScene_SelectionQueryPositionChanged
 func callbackQ3DScene_SelectionQueryPositionChanged(ptr unsafe.Pointer, position unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "selectionQueryPositionChanged"); signal != nil {
-		signal.(func(*core.QPoint))(core.NewQPointFromPointer(position))
+		(*(*func(*core.QPoint))(signal))(core.NewQPointFromPointer(position))
 	}
 
 }
@@ -3548,12 +3018,13 @@ func (ptr *Q3DScene) ConnectSelectionQueryPositionChanged(f func(position *core.
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "selectionQueryPositionChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectionQueryPositionChanged", func(position *core.QPoint) {
-				signal.(func(*core.QPoint))(position)
+			f := func(position *core.QPoint) {
+				(*(*func(*core.QPoint))(signal))(position)
 				f(position)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "selectionQueryPositionChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectionQueryPositionChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "selectionQueryPositionChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3628,7 +3099,7 @@ func (ptr *Q3DScene) SetSlicingActive(isSlicing bool) {
 //export callbackQ3DScene_SlicingActiveChanged
 func callbackQ3DScene_SlicingActiveChanged(ptr unsafe.Pointer, isSlicingActive C.char) {
 	if signal := qt.GetSignal(ptr, "slicingActiveChanged"); signal != nil {
-		signal.(func(bool))(int8(isSlicingActive) != 0)
+		(*(*func(bool))(signal))(int8(isSlicingActive) != 0)
 	}
 
 }
@@ -3641,12 +3112,13 @@ func (ptr *Q3DScene) ConnectSlicingActiveChanged(f func(isSlicingActive bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "slicingActiveChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "slicingActiveChanged", func(isSlicingActive bool) {
-				signal.(func(bool))(isSlicingActive)
+			f := func(isSlicingActive bool) {
+				(*(*func(bool))(signal))(isSlicingActive)
 				f(isSlicingActive)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "slicingActiveChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "slicingActiveChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "slicingActiveChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3664,10 +3136,19 @@ func (ptr *Q3DScene) SlicingActiveChanged(isSlicingActive bool) {
 	}
 }
 
+func (ptr *Q3DScene) Viewport() *core.QRect {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRectFromPointer(C.Q3DScene_Viewport(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRect).DestroyQRect)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DScene_ViewportChanged
 func callbackQ3DScene_ViewportChanged(ptr unsafe.Pointer, viewport unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "viewportChanged"); signal != nil {
-		signal.(func(*core.QRect))(core.NewQRectFromPointer(viewport))
+		(*(*func(*core.QRect))(signal))(core.NewQRectFromPointer(viewport))
 	}
 
 }
@@ -3680,12 +3161,13 @@ func (ptr *Q3DScene) ConnectViewportChanged(f func(viewport *core.QRect)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "viewportChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "viewportChanged", func(viewport *core.QRect) {
-				signal.(func(*core.QRect))(viewport)
+			f := func(viewport *core.QRect) {
+				(*(*func(*core.QRect))(signal))(viewport)
 				f(viewport)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "viewportChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "viewportChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "viewportChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3706,7 +3188,7 @@ func (ptr *Q3DScene) ViewportChanged(viewport core.QRect_ITF) {
 //export callbackQ3DScene_DestroyQ3DScene
 func callbackQ3DScene_DestroyQ3DScene(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~Q3DScene"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQ3DSceneFromPointer(ptr).DestroyQ3DSceneDefault()
 	}
@@ -3716,12 +3198,13 @@ func (ptr *Q3DScene) ConnectDestroyQ3DScene(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~Q3DScene"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DScene", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DScene", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DScene", f)
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DScene", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -3747,130 +3230,6 @@ func (ptr *Q3DScene) DestroyQ3DSceneDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *Q3DScene) ActiveCamera() *Q3DCamera {
-	if ptr.Pointer() != nil {
-		return NewQ3DCameraFromPointer(C.Q3DScene_ActiveCamera(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DScene) ActiveLight() *Q3DLight {
-	if ptr.Pointer() != nil {
-		return NewQ3DLightFromPointer(C.Q3DScene_ActiveLight(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DScene) GraphPositionQuery() *core.QPoint {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQPointFromPointer(C.Q3DScene_GraphPositionQuery(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DScene) SelectionQueryPosition() *core.QPoint {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQPointFromPointer(C.Q3DScene_SelectionQueryPosition(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DScene) PrimarySubViewport() *core.QRect {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRectFromPointer(C.Q3DScene_PrimarySubViewport(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRect).DestroyQRect)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DScene) SecondarySubViewport() *core.QRect {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRectFromPointer(C.Q3DScene_SecondarySubViewport(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRect).DestroyQRect)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DScene) Viewport() *core.QRect {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRectFromPointer(C.Q3DScene_Viewport(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRect).DestroyQRect)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DScene) IsSecondarySubviewOnTop() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DScene_IsSecondarySubviewOnTop(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *Q3DScene) IsSlicingActive() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DScene_IsSlicingActive(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQ3DScene_MetaObject
-func callbackQ3DScene_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQ3DSceneFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *Q3DScene) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *Q3DScene) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *Q3DScene) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DScene_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DScene) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DScene_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DScene) DevicePixelRatio() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DScene_DevicePixelRatio(ptr.Pointer()))
-	}
-	return 0
 }
 
 type Q3DSurface struct {
@@ -3914,62 +3273,6 @@ func NewQ3DSurface(format gui.QSurfaceFormat_ITF, parent gui.QWindow_ITF) *Q3DSu
 	return NewQ3DSurfaceFromPointer(C.Q3DSurface_NewQ3DSurface(gui.PointerFromQSurfaceFormat(format), gui.PointerFromQWindow(parent)))
 }
 
-func Q3DSurface_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DSurface_Q3DSurface_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DSurface) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DSurface_Q3DSurface_Tr(sC, cC, C.int(int32(n))))
-}
-
-func Q3DSurface_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DSurface_Q3DSurface_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DSurface) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DSurface_Q3DSurface_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 func (ptr *Q3DSurface) AddAxis(axis QValue3DAxis_ITF) {
 	if ptr.Pointer() != nil {
 		C.Q3DSurface_AddAxis(ptr.Pointer(), PointerFromQValue3DAxis(axis))
@@ -3982,10 +3285,31 @@ func (ptr *Q3DSurface) AddSeries(series QSurface3DSeries_ITF) {
 	}
 }
 
+func (ptr *Q3DSurface) Axes() []*QValue3DAxis {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []*QValue3DAxis {
+			out := make([]*QValue3DAxis, int(l.len))
+			tmpList := NewQ3DSurfaceFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__axes_atList(i)
+			}
+			return out
+		}(C.Q3DSurface_Axes(ptr.Pointer()))
+	}
+	return make([]*QValue3DAxis, 0)
+}
+
+func (ptr *Q3DSurface) AxisX() *QValue3DAxis {
+	if ptr.Pointer() != nil {
+		return NewQValue3DAxisFromPointer(C.Q3DSurface_AxisX(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DSurface_AxisXChanged
 func callbackQ3DSurface_AxisXChanged(ptr unsafe.Pointer, axis unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "axisXChanged"); signal != nil {
-		signal.(func(*QValue3DAxis))(NewQValue3DAxisFromPointer(axis))
+		(*(*func(*QValue3DAxis))(signal))(NewQValue3DAxisFromPointer(axis))
 	}
 
 }
@@ -3998,12 +3322,13 @@ func (ptr *Q3DSurface) ConnectAxisXChanged(f func(axis *QValue3DAxis)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "axisXChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "axisXChanged", func(axis *QValue3DAxis) {
-				signal.(func(*QValue3DAxis))(axis)
+			f := func(axis *QValue3DAxis) {
+				(*(*func(*QValue3DAxis))(signal))(axis)
 				f(axis)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "axisXChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "axisXChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "axisXChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4021,10 +3346,17 @@ func (ptr *Q3DSurface) AxisXChanged(axis QValue3DAxis_ITF) {
 	}
 }
 
+func (ptr *Q3DSurface) AxisY() *QValue3DAxis {
+	if ptr.Pointer() != nil {
+		return NewQValue3DAxisFromPointer(C.Q3DSurface_AxisY(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DSurface_AxisYChanged
 func callbackQ3DSurface_AxisYChanged(ptr unsafe.Pointer, axis unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "axisYChanged"); signal != nil {
-		signal.(func(*QValue3DAxis))(NewQValue3DAxisFromPointer(axis))
+		(*(*func(*QValue3DAxis))(signal))(NewQValue3DAxisFromPointer(axis))
 	}
 
 }
@@ -4037,12 +3369,13 @@ func (ptr *Q3DSurface) ConnectAxisYChanged(f func(axis *QValue3DAxis)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "axisYChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "axisYChanged", func(axis *QValue3DAxis) {
-				signal.(func(*QValue3DAxis))(axis)
+			f := func(axis *QValue3DAxis) {
+				(*(*func(*QValue3DAxis))(signal))(axis)
 				f(axis)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "axisYChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "axisYChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "axisYChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4060,10 +3393,17 @@ func (ptr *Q3DSurface) AxisYChanged(axis QValue3DAxis_ITF) {
 	}
 }
 
+func (ptr *Q3DSurface) AxisZ() *QValue3DAxis {
+	if ptr.Pointer() != nil {
+		return NewQValue3DAxisFromPointer(C.Q3DSurface_AxisZ(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DSurface_AxisZChanged
 func callbackQ3DSurface_AxisZChanged(ptr unsafe.Pointer, axis unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "axisZChanged"); signal != nil {
-		signal.(func(*QValue3DAxis))(NewQValue3DAxisFromPointer(axis))
+		(*(*func(*QValue3DAxis))(signal))(NewQValue3DAxisFromPointer(axis))
 	}
 
 }
@@ -4076,12 +3416,13 @@ func (ptr *Q3DSurface) ConnectAxisZChanged(f func(axis *QValue3DAxis)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "axisZChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "axisZChanged", func(axis *QValue3DAxis) {
-				signal.(func(*QValue3DAxis))(axis)
+			f := func(axis *QValue3DAxis) {
+				(*(*func(*QValue3DAxis))(signal))(axis)
 				f(axis)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "axisZChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "axisZChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "axisZChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4099,10 +3440,17 @@ func (ptr *Q3DSurface) AxisZChanged(axis QValue3DAxis_ITF) {
 	}
 }
 
+func (ptr *Q3DSurface) FlipHorizontalGrid() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DSurface_FlipHorizontalGrid(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQ3DSurface_FlipHorizontalGridChanged
 func callbackQ3DSurface_FlipHorizontalGridChanged(ptr unsafe.Pointer, flip C.char) {
 	if signal := qt.GetSignal(ptr, "flipHorizontalGridChanged"); signal != nil {
-		signal.(func(bool))(int8(flip) != 0)
+		(*(*func(bool))(signal))(int8(flip) != 0)
 	}
 
 }
@@ -4115,12 +3463,13 @@ func (ptr *Q3DSurface) ConnectFlipHorizontalGridChanged(f func(flip bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "flipHorizontalGridChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "flipHorizontalGridChanged", func(flip bool) {
-				signal.(func(bool))(flip)
+			f := func(flip bool) {
+				(*(*func(bool))(signal))(flip)
 				f(flip)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "flipHorizontalGridChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "flipHorizontalGridChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "flipHorizontalGridChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4150,10 +3499,17 @@ func (ptr *Q3DSurface) RemoveSeries(series QSurface3DSeries_ITF) {
 	}
 }
 
+func (ptr *Q3DSurface) SelectedSeries() *QSurface3DSeries {
+	if ptr.Pointer() != nil {
+		return NewQSurface3DSeriesFromPointer(C.Q3DSurface_SelectedSeries(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQ3DSurface_SelectedSeriesChanged
 func callbackQ3DSurface_SelectedSeriesChanged(ptr unsafe.Pointer, series unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "selectedSeriesChanged"); signal != nil {
-		signal.(func(*QSurface3DSeries))(NewQSurface3DSeriesFromPointer(series))
+		(*(*func(*QSurface3DSeries))(signal))(NewQSurface3DSeriesFromPointer(series))
 	}
 
 }
@@ -4166,12 +3522,13 @@ func (ptr *Q3DSurface) ConnectSelectedSeriesChanged(f func(series *QSurface3DSer
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "selectedSeriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", func(series *QSurface3DSeries) {
-				signal.(func(*QSurface3DSeries))(series)
+			f := func(series *QSurface3DSeries) {
+				(*(*func(*QSurface3DSeries))(signal))(series)
 				f(series)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "selectedSeriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4187,6 +3544,20 @@ func (ptr *Q3DSurface) SelectedSeriesChanged(series QSurface3DSeries_ITF) {
 	if ptr.Pointer() != nil {
 		C.Q3DSurface_SelectedSeriesChanged(ptr.Pointer(), PointerFromQSurface3DSeries(series))
 	}
+}
+
+func (ptr *Q3DSurface) SeriesList() []*QSurface3DSeries {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []*QSurface3DSeries {
+			out := make([]*QSurface3DSeries, int(l.len))
+			tmpList := NewQ3DSurfaceFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__seriesList_atList(i)
+			}
+			return out
+		}(C.Q3DSurface_SeriesList(ptr.Pointer()))
+	}
+	return make([]*QSurface3DSeries, 0)
 }
 
 func (ptr *Q3DSurface) SetAxisX(axis QValue3DAxis_ITF) {
@@ -4216,7 +3587,7 @@ func (ptr *Q3DSurface) SetFlipHorizontalGrid(flip bool) {
 //export callbackQ3DSurface_DestroyQ3DSurface
 func callbackQ3DSurface_DestroyQ3DSurface(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~Q3DSurface"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQ3DSurfaceFromPointer(ptr).DestroyQ3DSurfaceDefault()
 	}
@@ -4226,12 +3597,13 @@ func (ptr *Q3DSurface) ConnectDestroyQ3DSurface(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~Q3DSurface"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DSurface", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DSurface", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DSurface", f)
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DSurface", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4247,7 +3619,6 @@ func (ptr *Q3DSurface) DestroyQ3DSurface() {
 	if ptr.Pointer() != nil {
 		C.Q3DSurface_DestroyQ3DSurface(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -4255,132 +3626,7 @@ func (ptr *Q3DSurface) DestroyQ3DSurfaceDefault() {
 	if ptr.Pointer() != nil {
 		C.Q3DSurface_DestroyQ3DSurfaceDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *Q3DSurface) SeriesList() []*QSurface3DSeries {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*QSurface3DSeries {
-			out := make([]*QSurface3DSeries, int(l.len))
-			tmpList := NewQ3DSurfaceFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__seriesList_atList(i)
-			}
-			return out
-		}(C.Q3DSurface_SeriesList(ptr.Pointer()))
-	}
-	return make([]*QSurface3DSeries, 0)
-}
-
-func (ptr *Q3DSurface) Axes() []*QValue3DAxis {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*QValue3DAxis {
-			out := make([]*QValue3DAxis, int(l.len))
-			tmpList := NewQ3DSurfaceFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__axes_atList(i)
-			}
-			return out
-		}(C.Q3DSurface_Axes(ptr.Pointer()))
-	}
-	return make([]*QValue3DAxis, 0)
-}
-
-func (ptr *Q3DSurface) SelectedSeries() *QSurface3DSeries {
-	if ptr.Pointer() != nil {
-		return NewQSurface3DSeriesFromPointer(C.Q3DSurface_SelectedSeries(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DSurface) AxisX() *QValue3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQValue3DAxisFromPointer(C.Q3DSurface_AxisX(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DSurface) AxisY() *QValue3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQValue3DAxisFromPointer(C.Q3DSurface_AxisY(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DSurface) AxisZ() *QValue3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQValue3DAxisFromPointer(C.Q3DSurface_AxisZ(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DSurface) FlipHorizontalGrid() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DSurface_FlipHorizontalGrid(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQ3DSurface_MetaObject
-func callbackQ3DSurface_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQ3DSurfaceFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *Q3DSurface) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *Q3DSurface) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *Q3DSurface) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DSurface_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DSurface) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DSurface_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DSurface) __seriesList_atList(i int) *QSurface3DSeries {
-	if ptr.Pointer() != nil {
-		return NewQSurface3DSeriesFromPointer(C.Q3DSurface___seriesList_atList(ptr.Pointer(), C.int(int32(i))))
-	}
-	return nil
-}
-
-func (ptr *Q3DSurface) __seriesList_setList(i QSurface3DSeries_ITF) {
-	if ptr.Pointer() != nil {
-		C.Q3DSurface___seriesList_setList(ptr.Pointer(), PointerFromQSurface3DSeries(i))
-	}
-}
-
-func (ptr *Q3DSurface) __seriesList_newList() unsafe.Pointer {
-	return C.Q3DSurface___seriesList_newList(ptr.Pointer())
 }
 
 func (ptr *Q3DSurface) __axes_atList(i int) *QValue3DAxis {
@@ -4398,6 +3644,23 @@ func (ptr *Q3DSurface) __axes_setList(i QValue3DAxis_ITF) {
 
 func (ptr *Q3DSurface) __axes_newList() unsafe.Pointer {
 	return C.Q3DSurface___axes_newList(ptr.Pointer())
+}
+
+func (ptr *Q3DSurface) __seriesList_atList(i int) *QSurface3DSeries {
+	if ptr.Pointer() != nil {
+		return NewQSurface3DSeriesFromPointer(C.Q3DSurface___seriesList_atList(ptr.Pointer(), C.int(int32(i))))
+	}
+	return nil
+}
+
+func (ptr *Q3DSurface) __seriesList_setList(i QSurface3DSeries_ITF) {
+	if ptr.Pointer() != nil {
+		C.Q3DSurface___seriesList_setList(ptr.Pointer(), PointerFromQSurface3DSeries(i))
+	}
+}
+
+func (ptr *Q3DSurface) __seriesList_newList() unsafe.Pointer {
+	return C.Q3DSurface___seriesList_newList(ptr.Pointer())
 }
 
 type Q3DTheme struct {
@@ -4464,74 +3727,25 @@ const (
 	Q3DTheme__ThemeUserDefined   Q3DTheme__Theme = Q3DTheme__Theme(8)
 )
 
-func NewQ3DTheme2(themeType Q3DTheme__Theme, parent core.QObject_ITF) *Q3DTheme {
-	return NewQ3DThemeFromPointer(C.Q3DTheme_NewQ3DTheme2(C.longlong(themeType), core.PointerFromQObject(parent)))
-}
-
 func NewQ3DTheme(parent core.QObject_ITF) *Q3DTheme {
 	return NewQ3DThemeFromPointer(C.Q3DTheme_NewQ3DTheme(core.PointerFromQObject(parent)))
 }
 
-func Q3DTheme_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DTheme_Q3DTheme_Tr(sC, cC, C.int(int32(n))))
+func NewQ3DTheme2(themeType Q3DTheme__Theme, parent core.QObject_ITF) *Q3DTheme {
+	return NewQ3DThemeFromPointer(C.Q3DTheme_NewQ3DTheme2(C.longlong(themeType), core.PointerFromQObject(parent)))
 }
 
-func (ptr *Q3DTheme) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *Q3DTheme) AmbientLightStrength() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DTheme_AmbientLightStrength(ptr.Pointer()))
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DTheme_Q3DTheme_Tr(sC, cC, C.int(int32(n))))
-}
-
-func Q3DTheme_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DTheme_Q3DTheme_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *Q3DTheme) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.Q3DTheme_Q3DTheme_TrUtf8(sC, cC, C.int(int32(n))))
+	return 0
 }
 
 //export callbackQ3DTheme_AmbientLightStrengthChanged
 func callbackQ3DTheme_AmbientLightStrengthChanged(ptr unsafe.Pointer, strength C.float) {
 	if signal := qt.GetSignal(ptr, "ambientLightStrengthChanged"); signal != nil {
-		signal.(func(float32))(float32(strength))
+		(*(*func(float32))(signal))(float32(strength))
 	}
 
 }
@@ -4544,12 +3758,13 @@ func (ptr *Q3DTheme) ConnectAmbientLightStrengthChanged(f func(strength float32)
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "ambientLightStrengthChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "ambientLightStrengthChanged", func(strength float32) {
-				signal.(func(float32))(strength)
+			f := func(strength float32) {
+				(*(*func(float32))(signal))(strength)
 				f(strength)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "ambientLightStrengthChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "ambientLightStrengthChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "ambientLightStrengthChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4567,10 +3782,19 @@ func (ptr *Q3DTheme) AmbientLightStrengthChanged(strength float32) {
 	}
 }
 
+func (ptr *Q3DTheme) BackgroundColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_BackgroundColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_BackgroundColorChanged
 func callbackQ3DTheme_BackgroundColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "backgroundColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -4583,12 +3807,13 @@ func (ptr *Q3DTheme) ConnectBackgroundColorChanged(f func(color *gui.QColor)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "backgroundColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "backgroundColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "backgroundColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "backgroundColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "backgroundColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4609,7 +3834,7 @@ func (ptr *Q3DTheme) BackgroundColorChanged(color gui.QColor_ITF) {
 //export callbackQ3DTheme_BackgroundEnabledChanged
 func callbackQ3DTheme_BackgroundEnabledChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "backgroundEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -4622,12 +3847,13 @@ func (ptr *Q3DTheme) ConnectBackgroundEnabledChanged(f func(enabled bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "backgroundEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "backgroundEnabledChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "backgroundEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "backgroundEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "backgroundEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4645,10 +3871,24 @@ func (ptr *Q3DTheme) BackgroundEnabledChanged(enabled bool) {
 	}
 }
 
+func (ptr *Q3DTheme) BaseColors() []*gui.QColor {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []*gui.QColor {
+			out := make([]*gui.QColor, int(l.len))
+			tmpList := NewQ3DThemeFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__baseColors_atList(i)
+			}
+			return out
+		}(C.Q3DTheme_BaseColors(ptr.Pointer()))
+	}
+	return make([]*gui.QColor, 0)
+}
+
 //export callbackQ3DTheme_BaseColorsChanged
 func callbackQ3DTheme_BaseColorsChanged(ptr unsafe.Pointer, colors C.struct_QtDataVisualization_PackedList) {
 	if signal := qt.GetSignal(ptr, "baseColorsChanged"); signal != nil {
-		signal.(func([]*gui.QColor))(func(l C.struct_QtDataVisualization_PackedList) []*gui.QColor {
+		(*(*func([]*gui.QColor))(signal))(func(l C.struct_QtDataVisualization_PackedList) []*gui.QColor {
 			out := make([]*gui.QColor, int(l.len))
 			tmpList := NewQ3DThemeFromPointer(l.data)
 			for i := 0; i < len(out); i++ {
@@ -4668,12 +3908,13 @@ func (ptr *Q3DTheme) ConnectBaseColorsChanged(f func(colors []*gui.QColor)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "baseColorsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "baseColorsChanged", func(colors []*gui.QColor) {
-				signal.(func([]*gui.QColor))(colors)
+			f := func(colors []*gui.QColor) {
+				(*(*func([]*gui.QColor))(signal))(colors)
 				f(colors)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "baseColorsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "baseColorsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "baseColorsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4697,10 +3938,24 @@ func (ptr *Q3DTheme) BaseColorsChanged(colors []*gui.QColor) {
 	}
 }
 
+func (ptr *Q3DTheme) BaseGradients() []*gui.QLinearGradient {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []*gui.QLinearGradient {
+			out := make([]*gui.QLinearGradient, int(l.len))
+			tmpList := NewQ3DThemeFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__baseGradients_atList(i)
+			}
+			return out
+		}(C.Q3DTheme_BaseGradients(ptr.Pointer()))
+	}
+	return make([]*gui.QLinearGradient, 0)
+}
+
 //export callbackQ3DTheme_BaseGradientsChanged
 func callbackQ3DTheme_BaseGradientsChanged(ptr unsafe.Pointer, gradients C.struct_QtDataVisualization_PackedList) {
 	if signal := qt.GetSignal(ptr, "baseGradientsChanged"); signal != nil {
-		signal.(func([]*gui.QLinearGradient))(func(l C.struct_QtDataVisualization_PackedList) []*gui.QLinearGradient {
+		(*(*func([]*gui.QLinearGradient))(signal))(func(l C.struct_QtDataVisualization_PackedList) []*gui.QLinearGradient {
 			out := make([]*gui.QLinearGradient, int(l.len))
 			tmpList := NewQ3DThemeFromPointer(l.data)
 			for i := 0; i < len(out); i++ {
@@ -4720,12 +3975,13 @@ func (ptr *Q3DTheme) ConnectBaseGradientsChanged(f func(gradients []*gui.QLinear
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "baseGradientsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "baseGradientsChanged", func(gradients []*gui.QLinearGradient) {
-				signal.(func([]*gui.QLinearGradient))(gradients)
+			f := func(gradients []*gui.QLinearGradient) {
+				(*(*func([]*gui.QLinearGradient))(signal))(gradients)
 				f(gradients)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "baseGradientsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "baseGradientsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "baseGradientsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4749,10 +4005,17 @@ func (ptr *Q3DTheme) BaseGradientsChanged(gradients []*gui.QLinearGradient) {
 	}
 }
 
+func (ptr *Q3DTheme) ColorStyle() Q3DTheme__ColorStyle {
+	if ptr.Pointer() != nil {
+		return Q3DTheme__ColorStyle(C.Q3DTheme_ColorStyle(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DTheme_ColorStyleChanged
 func callbackQ3DTheme_ColorStyleChanged(ptr unsafe.Pointer, style C.longlong) {
 	if signal := qt.GetSignal(ptr, "colorStyleChanged"); signal != nil {
-		signal.(func(Q3DTheme__ColorStyle))(Q3DTheme__ColorStyle(style))
+		(*(*func(Q3DTheme__ColorStyle))(signal))(Q3DTheme__ColorStyle(style))
 	}
 
 }
@@ -4765,12 +4028,13 @@ func (ptr *Q3DTheme) ConnectColorStyleChanged(f func(style Q3DTheme__ColorStyle)
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "colorStyleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "colorStyleChanged", func(style Q3DTheme__ColorStyle) {
-				signal.(func(Q3DTheme__ColorStyle))(style)
+			f := func(style Q3DTheme__ColorStyle) {
+				(*(*func(Q3DTheme__ColorStyle))(signal))(style)
 				f(style)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "colorStyleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "colorStyleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "colorStyleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4788,10 +4052,19 @@ func (ptr *Q3DTheme) ColorStyleChanged(style Q3DTheme__ColorStyle) {
 	}
 }
 
+func (ptr *Q3DTheme) Font() *gui.QFont {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQFontFromPointer(C.Q3DTheme_Font(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QFont).DestroyQFont)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_FontChanged
 func callbackQ3DTheme_FontChanged(ptr unsafe.Pointer, font unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "fontChanged"); signal != nil {
-		signal.(func(*gui.QFont))(gui.NewQFontFromPointer(font))
+		(*(*func(*gui.QFont))(signal))(gui.NewQFontFromPointer(font))
 	}
 
 }
@@ -4804,12 +4077,13 @@ func (ptr *Q3DTheme) ConnectFontChanged(f func(font *gui.QFont)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "fontChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "fontChanged", func(font *gui.QFont) {
-				signal.(func(*gui.QFont))(font)
+			f := func(font *gui.QFont) {
+				(*(*func(*gui.QFont))(signal))(font)
 				f(font)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "fontChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "fontChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "fontChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4830,7 +4104,7 @@ func (ptr *Q3DTheme) FontChanged(font gui.QFont_ITF) {
 //export callbackQ3DTheme_GridEnabledChanged
 func callbackQ3DTheme_GridEnabledChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "gridEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -4843,12 +4117,13 @@ func (ptr *Q3DTheme) ConnectGridEnabledChanged(f func(enabled bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "gridEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "gridEnabledChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "gridEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "gridEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "gridEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4866,10 +4141,19 @@ func (ptr *Q3DTheme) GridEnabledChanged(enabled bool) {
 	}
 }
 
+func (ptr *Q3DTheme) GridLineColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_GridLineColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_GridLineColorChanged
 func callbackQ3DTheme_GridLineColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "gridLineColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -4882,12 +4166,13 @@ func (ptr *Q3DTheme) ConnectGridLineColorChanged(f func(color *gui.QColor)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "gridLineColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "gridLineColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "gridLineColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "gridLineColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "gridLineColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4905,10 +4190,17 @@ func (ptr *Q3DTheme) GridLineColorChanged(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *Q3DTheme) HighlightLightStrength() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DTheme_HighlightLightStrength(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DTheme_HighlightLightStrengthChanged
 func callbackQ3DTheme_HighlightLightStrengthChanged(ptr unsafe.Pointer, strength C.float) {
 	if signal := qt.GetSignal(ptr, "highlightLightStrengthChanged"); signal != nil {
-		signal.(func(float32))(float32(strength))
+		(*(*func(float32))(signal))(float32(strength))
 	}
 
 }
@@ -4921,12 +4213,13 @@ func (ptr *Q3DTheme) ConnectHighlightLightStrengthChanged(f func(strength float3
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "highlightLightStrengthChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "highlightLightStrengthChanged", func(strength float32) {
-				signal.(func(float32))(strength)
+			f := func(strength float32) {
+				(*(*func(float32))(signal))(strength)
 				f(strength)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "highlightLightStrengthChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "highlightLightStrengthChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "highlightLightStrengthChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4944,10 +4237,47 @@ func (ptr *Q3DTheme) HighlightLightStrengthChanged(strength float32) {
 	}
 }
 
+func (ptr *Q3DTheme) IsBackgroundEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DTheme_IsBackgroundEnabled(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DTheme) IsGridEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DTheme_IsGridEnabled(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DTheme) IsLabelBackgroundEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DTheme_IsLabelBackgroundEnabled(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DTheme) IsLabelBorderEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.Q3DTheme_IsLabelBorderEnabled(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *Q3DTheme) LabelBackgroundColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_LabelBackgroundColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_LabelBackgroundColorChanged
 func callbackQ3DTheme_LabelBackgroundColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "labelBackgroundColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -4960,12 +4290,13 @@ func (ptr *Q3DTheme) ConnectLabelBackgroundColorChanged(f func(color *gui.QColor
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "labelBackgroundColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "labelBackgroundColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "labelBackgroundColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "labelBackgroundColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "labelBackgroundColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -4986,7 +4317,7 @@ func (ptr *Q3DTheme) LabelBackgroundColorChanged(color gui.QColor_ITF) {
 //export callbackQ3DTheme_LabelBackgroundEnabledChanged
 func callbackQ3DTheme_LabelBackgroundEnabledChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "labelBackgroundEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -4999,12 +4330,13 @@ func (ptr *Q3DTheme) ConnectLabelBackgroundEnabledChanged(f func(enabled bool)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "labelBackgroundEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "labelBackgroundEnabledChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "labelBackgroundEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "labelBackgroundEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "labelBackgroundEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5025,7 +4357,7 @@ func (ptr *Q3DTheme) LabelBackgroundEnabledChanged(enabled bool) {
 //export callbackQ3DTheme_LabelBorderEnabledChanged
 func callbackQ3DTheme_LabelBorderEnabledChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "labelBorderEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -5038,12 +4370,13 @@ func (ptr *Q3DTheme) ConnectLabelBorderEnabledChanged(f func(enabled bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "labelBorderEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "labelBorderEnabledChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "labelBorderEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "labelBorderEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "labelBorderEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5061,10 +4394,19 @@ func (ptr *Q3DTheme) LabelBorderEnabledChanged(enabled bool) {
 	}
 }
 
+func (ptr *Q3DTheme) LabelTextColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_LabelTextColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_LabelTextColorChanged
 func callbackQ3DTheme_LabelTextColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "labelTextColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -5077,12 +4419,13 @@ func (ptr *Q3DTheme) ConnectLabelTextColorChanged(f func(color *gui.QColor)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "labelTextColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "labelTextColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "labelTextColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "labelTextColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "labelTextColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5100,10 +4443,19 @@ func (ptr *Q3DTheme) LabelTextColorChanged(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *Q3DTheme) LightColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_LightColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_LightColorChanged
 func callbackQ3DTheme_LightColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "lightColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -5116,12 +4468,13 @@ func (ptr *Q3DTheme) ConnectLightColorChanged(f func(color *gui.QColor)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "lightColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "lightColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "lightColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "lightColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "lightColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5139,10 +4492,17 @@ func (ptr *Q3DTheme) LightColorChanged(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *Q3DTheme) LightStrength() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.Q3DTheme_LightStrength(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DTheme_LightStrengthChanged
 func callbackQ3DTheme_LightStrengthChanged(ptr unsafe.Pointer, strength C.float) {
 	if signal := qt.GetSignal(ptr, "lightStrengthChanged"); signal != nil {
-		signal.(func(float32))(float32(strength))
+		(*(*func(float32))(signal))(float32(strength))
 	}
 
 }
@@ -5155,12 +4515,13 @@ func (ptr *Q3DTheme) ConnectLightStrengthChanged(f func(strength float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "lightStrengthChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "lightStrengthChanged", func(strength float32) {
-				signal.(func(float32))(strength)
+			f := func(strength float32) {
+				(*(*func(float32))(signal))(strength)
 				f(strength)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "lightStrengthChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "lightStrengthChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "lightStrengthChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5178,10 +4539,19 @@ func (ptr *Q3DTheme) LightStrengthChanged(strength float32) {
 	}
 }
 
+func (ptr *Q3DTheme) MultiHighlightColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_MultiHighlightColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_MultiHighlightColorChanged
 func callbackQ3DTheme_MultiHighlightColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "multiHighlightColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -5194,12 +4564,13 @@ func (ptr *Q3DTheme) ConnectMultiHighlightColorChanged(f func(color *gui.QColor)
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "multiHighlightColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "multiHighlightColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "multiHighlightColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "multiHighlightColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "multiHighlightColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5217,10 +4588,19 @@ func (ptr *Q3DTheme) MultiHighlightColorChanged(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *Q3DTheme) MultiHighlightGradient() *gui.QLinearGradient {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQLinearGradientFromPointer(C.Q3DTheme_MultiHighlightGradient(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_MultiHighlightGradientChanged
 func callbackQ3DTheme_MultiHighlightGradientChanged(ptr unsafe.Pointer, gradient unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "multiHighlightGradientChanged"); signal != nil {
-		signal.(func(*gui.QLinearGradient))(gui.NewQLinearGradientFromPointer(gradient))
+		(*(*func(*gui.QLinearGradient))(signal))(gui.NewQLinearGradientFromPointer(gradient))
 	}
 
 }
@@ -5233,12 +4613,13 @@ func (ptr *Q3DTheme) ConnectMultiHighlightGradientChanged(f func(gradient *gui.Q
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "multiHighlightGradientChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "multiHighlightGradientChanged", func(gradient *gui.QLinearGradient) {
-				signal.(func(*gui.QLinearGradient))(gradient)
+			f := func(gradient *gui.QLinearGradient) {
+				(*(*func(*gui.QLinearGradient))(signal))(gradient)
 				f(gradient)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "multiHighlightGradientChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "multiHighlightGradientChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "multiHighlightGradientChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5400,10 +4781,19 @@ func (ptr *Q3DTheme) SetWindowColor(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *Q3DTheme) SingleHighlightColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_SingleHighlightColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_SingleHighlightColorChanged
 func callbackQ3DTheme_SingleHighlightColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "singleHighlightColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -5416,12 +4806,13 @@ func (ptr *Q3DTheme) ConnectSingleHighlightColorChanged(f func(color *gui.QColor
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "singleHighlightColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "singleHighlightColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "singleHighlightColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "singleHighlightColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "singleHighlightColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5439,10 +4830,19 @@ func (ptr *Q3DTheme) SingleHighlightColorChanged(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *Q3DTheme) SingleHighlightGradient() *gui.QLinearGradient {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQLinearGradientFromPointer(C.Q3DTheme_SingleHighlightGradient(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_SingleHighlightGradientChanged
 func callbackQ3DTheme_SingleHighlightGradientChanged(ptr unsafe.Pointer, gradient unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "singleHighlightGradientChanged"); signal != nil {
-		signal.(func(*gui.QLinearGradient))(gui.NewQLinearGradientFromPointer(gradient))
+		(*(*func(*gui.QLinearGradient))(signal))(gui.NewQLinearGradientFromPointer(gradient))
 	}
 
 }
@@ -5455,12 +4855,13 @@ func (ptr *Q3DTheme) ConnectSingleHighlightGradientChanged(f func(gradient *gui.
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "singleHighlightGradientChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "singleHighlightGradientChanged", func(gradient *gui.QLinearGradient) {
-				signal.(func(*gui.QLinearGradient))(gradient)
+			f := func(gradient *gui.QLinearGradient) {
+				(*(*func(*gui.QLinearGradient))(signal))(gradient)
 				f(gradient)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "singleHighlightGradientChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "singleHighlightGradientChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "singleHighlightGradientChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5478,10 +4879,17 @@ func (ptr *Q3DTheme) SingleHighlightGradientChanged(gradient gui.QLinearGradient
 	}
 }
 
+func (ptr *Q3DTheme) Type() Q3DTheme__Theme {
+	if ptr.Pointer() != nil {
+		return Q3DTheme__Theme(C.Q3DTheme_Type(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQ3DTheme_TypeChanged
 func callbackQ3DTheme_TypeChanged(ptr unsafe.Pointer, themeType C.longlong) {
 	if signal := qt.GetSignal(ptr, "typeChanged"); signal != nil {
-		signal.(func(Q3DTheme__Theme))(Q3DTheme__Theme(themeType))
+		(*(*func(Q3DTheme__Theme))(signal))(Q3DTheme__Theme(themeType))
 	}
 
 }
@@ -5494,12 +4902,13 @@ func (ptr *Q3DTheme) ConnectTypeChanged(f func(themeType Q3DTheme__Theme)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "typeChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "typeChanged", func(themeType Q3DTheme__Theme) {
-				signal.(func(Q3DTheme__Theme))(themeType)
+			f := func(themeType Q3DTheme__Theme) {
+				(*(*func(Q3DTheme__Theme))(signal))(themeType)
 				f(themeType)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "typeChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "typeChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "typeChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5517,10 +4926,19 @@ func (ptr *Q3DTheme) TypeChanged(themeType Q3DTheme__Theme) {
 	}
 }
 
+func (ptr *Q3DTheme) WindowColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_WindowColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQ3DTheme_WindowColorChanged
 func callbackQ3DTheme_WindowColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "windowColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -5533,12 +4951,13 @@ func (ptr *Q3DTheme) ConnectWindowColorChanged(f func(color *gui.QColor)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "windowColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "windowColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "windowColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "windowColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "windowColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5559,7 +4978,7 @@ func (ptr *Q3DTheme) WindowColorChanged(color gui.QColor_ITF) {
 //export callbackQ3DTheme_DestroyQ3DTheme
 func callbackQ3DTheme_DestroyQ3DTheme(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~Q3DTheme"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQ3DThemeFromPointer(ptr).DestroyQ3DThemeDefault()
 	}
@@ -5569,12 +4988,13 @@ func (ptr *Q3DTheme) ConnectDestroyQ3DTheme(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~Q3DTheme"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DTheme", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DTheme", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~Q3DTheme", f)
+			qt.ConnectSignal(ptr.Pointer(), "~Q3DTheme", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -5602,238 +5022,23 @@ func (ptr *Q3DTheme) DestroyQ3DThemeDefault() {
 	}
 }
 
-func (ptr *Q3DTheme) ColorStyle() Q3DTheme__ColorStyle {
+func (ptr *Q3DTheme) __baseColors_atList(i int) *gui.QColor {
 	if ptr.Pointer() != nil {
-		return Q3DTheme__ColorStyle(C.Q3DTheme_ColorStyle(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DTheme) Type() Q3DTheme__Theme {
-	if ptr.Pointer() != nil {
-		return Q3DTheme__Theme(C.Q3DTheme_Type(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DTheme) BackgroundColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_BackgroundColor(ptr.Pointer()))
+		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme___baseColors_atList(ptr.Pointer(), C.int(int32(i))))
 		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
 		return tmpValue
 	}
 	return nil
 }
 
-func (ptr *Q3DTheme) GridLineColor() *gui.QColor {
+func (ptr *Q3DTheme) __baseColors_setList(i gui.QColor_ITF) {
 	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_GridLineColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) LabelBackgroundColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_LabelBackgroundColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) LabelTextColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_LabelTextColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) LightColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_LightColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) MultiHighlightColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_MultiHighlightColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) SingleHighlightColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_SingleHighlightColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) WindowColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme_WindowColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) Font() *gui.QFont {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQFontFromPointer(C.Q3DTheme_Font(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QFont).DestroyQFont)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) MultiHighlightGradient() *gui.QLinearGradient {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQLinearGradientFromPointer(C.Q3DTheme_MultiHighlightGradient(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) SingleHighlightGradient() *gui.QLinearGradient {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQLinearGradientFromPointer(C.Q3DTheme_SingleHighlightGradient(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) BaseColors() []*gui.QColor {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*gui.QColor {
-			out := make([]*gui.QColor, int(l.len))
-			tmpList := NewQ3DThemeFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__baseColors_atList(i)
-			}
-			return out
-		}(C.Q3DTheme_BaseColors(ptr.Pointer()))
-	}
-	return make([]*gui.QColor, 0)
-}
-
-func (ptr *Q3DTheme) BaseGradients() []*gui.QLinearGradient {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*gui.QLinearGradient {
-			out := make([]*gui.QLinearGradient, int(l.len))
-			tmpList := NewQ3DThemeFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__baseGradients_atList(i)
-			}
-			return out
-		}(C.Q3DTheme_BaseGradients(ptr.Pointer()))
-	}
-	return make([]*gui.QLinearGradient, 0)
-}
-
-func (ptr *Q3DTheme) IsBackgroundEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DTheme_IsBackgroundEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *Q3DTheme) IsGridEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DTheme_IsGridEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *Q3DTheme) IsLabelBackgroundEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DTheme_IsLabelBackgroundEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *Q3DTheme) IsLabelBorderEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.Q3DTheme_IsLabelBorderEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQ3DTheme_MetaObject
-func callbackQ3DTheme_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQ3DThemeFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *Q3DTheme) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
+		C.Q3DTheme___baseColors_setList(ptr.Pointer(), gui.PointerFromQColor(i))
 	}
 }
 
-func (ptr *Q3DTheme) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *Q3DTheme) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DTheme_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.Q3DTheme_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) AmbientLightStrength() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DTheme_AmbientLightStrength(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DTheme) HighlightLightStrength() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DTheme_HighlightLightStrength(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *Q3DTheme) LightStrength() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.Q3DTheme_LightStrength(ptr.Pointer()))
-	}
-	return 0
+func (ptr *Q3DTheme) __baseColors_newList() unsafe.Pointer {
+	return C.Q3DTheme___baseColors_newList(ptr.Pointer())
 }
 
 func (ptr *Q3DTheme) __baseColorsChanged_colors_atList(i int) *gui.QColor {
@@ -5853,6 +5058,25 @@ func (ptr *Q3DTheme) __baseColorsChanged_colors_setList(i gui.QColor_ITF) {
 
 func (ptr *Q3DTheme) __baseColorsChanged_colors_newList() unsafe.Pointer {
 	return C.Q3DTheme___baseColorsChanged_colors_newList(ptr.Pointer())
+}
+
+func (ptr *Q3DTheme) __baseGradients_atList(i int) *gui.QLinearGradient {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQLinearGradientFromPointer(C.Q3DTheme___baseGradients_atList(ptr.Pointer(), C.int(int32(i))))
+		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
+		return tmpValue
+	}
+	return nil
+}
+
+func (ptr *Q3DTheme) __baseGradients_setList(i gui.QLinearGradient_ITF) {
+	if ptr.Pointer() != nil {
+		C.Q3DTheme___baseGradients_setList(ptr.Pointer(), gui.PointerFromQLinearGradient(i))
+	}
+}
+
+func (ptr *Q3DTheme) __baseGradients_newList() unsafe.Pointer {
+	return C.Q3DTheme___baseGradients_newList(ptr.Pointer())
 }
 
 func (ptr *Q3DTheme) __baseGradientsChanged_gradients_atList(i int) *gui.QLinearGradient {
@@ -5910,44 +5134,6 @@ func (ptr *Q3DTheme) __setBaseGradients_gradients_setList(i gui.QLinearGradient_
 
 func (ptr *Q3DTheme) __setBaseGradients_gradients_newList() unsafe.Pointer {
 	return C.Q3DTheme___setBaseGradients_gradients_newList(ptr.Pointer())
-}
-
-func (ptr *Q3DTheme) __baseColors_atList(i int) *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.Q3DTheme___baseColors_atList(ptr.Pointer(), C.int(int32(i))))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) __baseColors_setList(i gui.QColor_ITF) {
-	if ptr.Pointer() != nil {
-		C.Q3DTheme___baseColors_setList(ptr.Pointer(), gui.PointerFromQColor(i))
-	}
-}
-
-func (ptr *Q3DTheme) __baseColors_newList() unsafe.Pointer {
-	return C.Q3DTheme___baseColors_newList(ptr.Pointer())
-}
-
-func (ptr *Q3DTheme) __baseGradients_atList(i int) *gui.QLinearGradient {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQLinearGradientFromPointer(C.Q3DTheme___baseGradients_atList(ptr.Pointer(), C.int(int32(i))))
-		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *Q3DTheme) __baseGradients_setList(i gui.QLinearGradient_ITF) {
-	if ptr.Pointer() != nil {
-		C.Q3DTheme___baseGradients_setList(ptr.Pointer(), gui.PointerFromQLinearGradient(i))
-	}
-}
-
-func (ptr *Q3DTheme) __baseGradients_newList() unsafe.Pointer {
-	return C.Q3DTheme___baseGradients_newList(ptr.Pointer())
 }
 
 type QAbstract3DAxis struct {
@@ -6009,66 +5195,10 @@ const (
 	QAbstract3DAxis__AxisTypeValue    QAbstract3DAxis__AxisType = QAbstract3DAxis__AxisType(2)
 )
 
-func QAbstract3DAxis_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DAxis_QAbstract3DAxis_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstract3DAxis) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DAxis_QAbstract3DAxis_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QAbstract3DAxis_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DAxis_QAbstract3DAxis_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstract3DAxis) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DAxis_QAbstract3DAxis_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 //export callbackQAbstract3DAxis_AutoAdjustRangeChanged
 func callbackQAbstract3DAxis_AutoAdjustRangeChanged(ptr unsafe.Pointer, autoAdjust C.char) {
 	if signal := qt.GetSignal(ptr, "autoAdjustRangeChanged"); signal != nil {
-		signal.(func(bool))(int8(autoAdjust) != 0)
+		(*(*func(bool))(signal))(int8(autoAdjust) != 0)
 	}
 
 }
@@ -6081,12 +5211,13 @@ func (ptr *QAbstract3DAxis) ConnectAutoAdjustRangeChanged(f func(autoAdjust bool
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "autoAdjustRangeChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "autoAdjustRangeChanged", func(autoAdjust bool) {
-				signal.(func(bool))(autoAdjust)
+			f := func(autoAdjust bool) {
+				(*(*func(bool))(signal))(autoAdjust)
 				f(autoAdjust)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "autoAdjustRangeChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "autoAdjustRangeChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "autoAdjustRangeChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6104,10 +5235,38 @@ func (ptr *QAbstract3DAxis) AutoAdjustRangeChanged(autoAdjust bool) {
 	}
 }
 
+func (ptr *QAbstract3DAxis) IsAutoAdjustRange() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QAbstract3DAxis_IsAutoAdjustRange(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QAbstract3DAxis) IsTitleFixed() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QAbstract3DAxis_IsTitleFixed(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QAbstract3DAxis) IsTitleVisible() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QAbstract3DAxis_IsTitleVisible(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QAbstract3DAxis) LabelAutoRotation() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QAbstract3DAxis_LabelAutoRotation(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQAbstract3DAxis_LabelAutoRotationChanged
 func callbackQAbstract3DAxis_LabelAutoRotationChanged(ptr unsafe.Pointer, angle C.float) {
 	if signal := qt.GetSignal(ptr, "labelAutoRotationChanged"); signal != nil {
-		signal.(func(float32))(float32(angle))
+		(*(*func(float32))(signal))(float32(angle))
 	}
 
 }
@@ -6120,12 +5279,13 @@ func (ptr *QAbstract3DAxis) ConnectLabelAutoRotationChanged(f func(angle float32
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "labelAutoRotationChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "labelAutoRotationChanged", func(angle float32) {
-				signal.(func(float32))(angle)
+			f := func(angle float32) {
+				(*(*func(float32))(signal))(angle)
 				f(angle)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "labelAutoRotationChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "labelAutoRotationChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "labelAutoRotationChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6143,10 +5303,17 @@ func (ptr *QAbstract3DAxis) LabelAutoRotationChanged(angle float32) {
 	}
 }
 
+func (ptr *QAbstract3DAxis) Labels() []string {
+	if ptr.Pointer() != nil {
+		return unpackStringList(cGoUnpackString(C.QAbstract3DAxis_Labels(ptr.Pointer())))
+	}
+	return make([]string, 0)
+}
+
 //export callbackQAbstract3DAxis_LabelsChanged
 func callbackQAbstract3DAxis_LabelsChanged(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "labelsChanged"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -6159,12 +5326,13 @@ func (ptr *QAbstract3DAxis) ConnectLabelsChanged(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "labelsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "labelsChanged", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "labelsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "labelsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "labelsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6182,10 +5350,17 @@ func (ptr *QAbstract3DAxis) LabelsChanged() {
 	}
 }
 
+func (ptr *QAbstract3DAxis) Max() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QAbstract3DAxis_Max(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQAbstract3DAxis_MaxChanged
 func callbackQAbstract3DAxis_MaxChanged(ptr unsafe.Pointer, value C.float) {
 	if signal := qt.GetSignal(ptr, "maxChanged"); signal != nil {
-		signal.(func(float32))(float32(value))
+		(*(*func(float32))(signal))(float32(value))
 	}
 
 }
@@ -6198,12 +5373,13 @@ func (ptr *QAbstract3DAxis) ConnectMaxChanged(f func(value float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "maxChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "maxChanged", func(value float32) {
-				signal.(func(float32))(value)
+			f := func(value float32) {
+				(*(*func(float32))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "maxChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "maxChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "maxChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6221,10 +5397,17 @@ func (ptr *QAbstract3DAxis) MaxChanged(value float32) {
 	}
 }
 
+func (ptr *QAbstract3DAxis) Min() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QAbstract3DAxis_Min(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQAbstract3DAxis_MinChanged
 func callbackQAbstract3DAxis_MinChanged(ptr unsafe.Pointer, value C.float) {
 	if signal := qt.GetSignal(ptr, "minChanged"); signal != nil {
-		signal.(func(float32))(float32(value))
+		(*(*func(float32))(signal))(float32(value))
 	}
 
 }
@@ -6237,12 +5420,13 @@ func (ptr *QAbstract3DAxis) ConnectMinChanged(f func(value float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "minChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "minChanged", func(value float32) {
-				signal.(func(float32))(value)
+			f := func(value float32) {
+				(*(*func(float32))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "minChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "minChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "minChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6260,10 +5444,17 @@ func (ptr *QAbstract3DAxis) MinChanged(value float32) {
 	}
 }
 
+func (ptr *QAbstract3DAxis) Orientation() QAbstract3DAxis__AxisOrientation {
+	if ptr.Pointer() != nil {
+		return QAbstract3DAxis__AxisOrientation(C.QAbstract3DAxis_Orientation(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQAbstract3DAxis_OrientationChanged
 func callbackQAbstract3DAxis_OrientationChanged(ptr unsafe.Pointer, orientation C.longlong) {
 	if signal := qt.GetSignal(ptr, "orientationChanged"); signal != nil {
-		signal.(func(QAbstract3DAxis__AxisOrientation))(QAbstract3DAxis__AxisOrientation(orientation))
+		(*(*func(QAbstract3DAxis__AxisOrientation))(signal))(QAbstract3DAxis__AxisOrientation(orientation))
 	}
 
 }
@@ -6276,12 +5467,13 @@ func (ptr *QAbstract3DAxis) ConnectOrientationChanged(f func(orientation QAbstra
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "orientationChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "orientationChanged", func(orientation QAbstract3DAxis__AxisOrientation) {
-				signal.(func(QAbstract3DAxis__AxisOrientation))(orientation)
+			f := func(orientation QAbstract3DAxis__AxisOrientation) {
+				(*(*func(QAbstract3DAxis__AxisOrientation))(signal))(orientation)
 				f(orientation)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "orientationChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "orientationChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "orientationChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6302,7 +5494,7 @@ func (ptr *QAbstract3DAxis) OrientationChanged(orientation QAbstract3DAxis__Axis
 //export callbackQAbstract3DAxis_RangeChanged
 func callbackQAbstract3DAxis_RangeChanged(ptr unsafe.Pointer, min C.float, max C.float) {
 	if signal := qt.GetSignal(ptr, "rangeChanged"); signal != nil {
-		signal.(func(float32, float32))(float32(min), float32(max))
+		(*(*func(float32, float32))(signal))(float32(min), float32(max))
 	}
 
 }
@@ -6315,12 +5507,13 @@ func (ptr *QAbstract3DAxis) ConnectRangeChanged(f func(min float32, max float32)
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rangeChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rangeChanged", func(min float32, max float32) {
-				signal.(func(float32, float32))(min, max)
+			f := func(min float32, max float32) {
+				(*(*func(float32, float32))(signal))(min, max)
 				f(min, max)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rangeChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rangeChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rangeChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6352,9 +5545,9 @@ func (ptr *QAbstract3DAxis) SetLabelAutoRotation(angle float32) {
 
 func (ptr *QAbstract3DAxis) SetLabels(labels []string) {
 	if ptr.Pointer() != nil {
-		labelsC := C.CString(strings.Join(labels, "|"))
+		labelsC := C.CString(strings.Join(labels, "¡¦!"))
 		defer C.free(unsafe.Pointer(labelsC))
-		C.QAbstract3DAxis_SetLabels(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: labelsC, len: C.longlong(len(strings.Join(labels, "|")))})
+		C.QAbstract3DAxis_SetLabels(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: labelsC, len: C.longlong(len(strings.Join(labels, "¡¦!")))})
 	}
 }
 
@@ -6399,10 +5592,17 @@ func (ptr *QAbstract3DAxis) SetTitleVisible(visible bool) {
 	}
 }
 
+func (ptr *QAbstract3DAxis) Title() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QAbstract3DAxis_Title(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQAbstract3DAxis_TitleChanged
 func callbackQAbstract3DAxis_TitleChanged(ptr unsafe.Pointer, newTitle C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "titleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(newTitle))
+		(*(*func(string))(signal))(cGoUnpackString(newTitle))
 	}
 
 }
@@ -6415,12 +5615,13 @@ func (ptr *QAbstract3DAxis) ConnectTitleChanged(f func(newTitle string)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "titleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "titleChanged", func(newTitle string) {
-				signal.(func(string))(newTitle)
+			f := func(newTitle string) {
+				(*(*func(string))(signal))(newTitle)
 				f(newTitle)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "titleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "titleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "titleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6446,7 +5647,7 @@ func (ptr *QAbstract3DAxis) TitleChanged(newTitle string) {
 //export callbackQAbstract3DAxis_TitleFixedChanged
 func callbackQAbstract3DAxis_TitleFixedChanged(ptr unsafe.Pointer, fixed C.char) {
 	if signal := qt.GetSignal(ptr, "titleFixedChanged"); signal != nil {
-		signal.(func(bool))(int8(fixed) != 0)
+		(*(*func(bool))(signal))(int8(fixed) != 0)
 	}
 
 }
@@ -6459,12 +5660,13 @@ func (ptr *QAbstract3DAxis) ConnectTitleFixedChanged(f func(fixed bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "titleFixedChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "titleFixedChanged", func(fixed bool) {
-				signal.(func(bool))(fixed)
+			f := func(fixed bool) {
+				(*(*func(bool))(signal))(fixed)
 				f(fixed)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "titleFixedChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "titleFixedChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "titleFixedChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6485,7 +5687,7 @@ func (ptr *QAbstract3DAxis) TitleFixedChanged(fixed bool) {
 //export callbackQAbstract3DAxis_TitleVisibilityChanged
 func callbackQAbstract3DAxis_TitleVisibilityChanged(ptr unsafe.Pointer, visible C.char) {
 	if signal := qt.GetSignal(ptr, "titleVisibilityChanged"); signal != nil {
-		signal.(func(bool))(int8(visible) != 0)
+		(*(*func(bool))(signal))(int8(visible) != 0)
 	}
 
 }
@@ -6498,12 +5700,13 @@ func (ptr *QAbstract3DAxis) ConnectTitleVisibilityChanged(f func(visible bool)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "titleVisibilityChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "titleVisibilityChanged", func(visible bool) {
-				signal.(func(bool))(visible)
+			f := func(visible bool) {
+				(*(*func(bool))(signal))(visible)
 				f(visible)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "titleVisibilityChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "titleVisibilityChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "titleVisibilityChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6521,10 +5724,17 @@ func (ptr *QAbstract3DAxis) TitleVisibilityChanged(visible bool) {
 	}
 }
 
+func (ptr *QAbstract3DAxis) Type() QAbstract3DAxis__AxisType {
+	if ptr.Pointer() != nil {
+		return QAbstract3DAxis__AxisType(C.QAbstract3DAxis_Type(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQAbstract3DAxis_DestroyQAbstract3DAxis
 func callbackQAbstract3DAxis_DestroyQAbstract3DAxis(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QAbstract3DAxis"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQAbstract3DAxisFromPointer(ptr).DestroyQAbstract3DAxisDefault()
 	}
@@ -6534,12 +5744,13 @@ func (ptr *QAbstract3DAxis) ConnectDestroyQAbstract3DAxis(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QAbstract3DAxis"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DAxis", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DAxis", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DAxis", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DAxis", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -6555,7 +5766,6 @@ func (ptr *QAbstract3DAxis) DestroyQAbstract3DAxis() {
 	if ptr.Pointer() != nil {
 		C.QAbstract3DAxis_DestroyQAbstract3DAxis(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -6563,122 +5773,7 @@ func (ptr *QAbstract3DAxis) DestroyQAbstract3DAxisDefault() {
 	if ptr.Pointer() != nil {
 		C.QAbstract3DAxis_DestroyQAbstract3DAxisDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QAbstract3DAxis) Orientation() QAbstract3DAxis__AxisOrientation {
-	if ptr.Pointer() != nil {
-		return QAbstract3DAxis__AxisOrientation(C.QAbstract3DAxis_Orientation(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DAxis) Type() QAbstract3DAxis__AxisType {
-	if ptr.Pointer() != nil {
-		return QAbstract3DAxis__AxisType(C.QAbstract3DAxis_Type(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DAxis) Title() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QAbstract3DAxis_Title(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QAbstract3DAxis) Labels() []string {
-	if ptr.Pointer() != nil {
-		return strings.Split(cGoUnpackString(C.QAbstract3DAxis_Labels(ptr.Pointer())), "|")
-	}
-	return make([]string, 0)
-}
-
-func (ptr *QAbstract3DAxis) IsAutoAdjustRange() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DAxis_IsAutoAdjustRange(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QAbstract3DAxis) IsTitleFixed() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DAxis_IsTitleFixed(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QAbstract3DAxis) IsTitleVisible() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DAxis_IsTitleVisible(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQAbstract3DAxis_MetaObject
-func callbackQAbstract3DAxis_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQAbstract3DAxisFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QAbstract3DAxis) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DAxis) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QAbstract3DAxis) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstract3DAxis_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DAxis) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstract3DAxis_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DAxis) LabelAutoRotation() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QAbstract3DAxis_LabelAutoRotation(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DAxis) Max() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QAbstract3DAxis_Max(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DAxis) Min() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QAbstract3DAxis_Min(ptr.Pointer()))
-	}
-	return 0
 }
 
 type QAbstract3DGraph struct {
@@ -6719,28 +5814,6 @@ func NewQAbstract3DGraphFromPointer(ptr unsafe.Pointer) (n *QAbstract3DGraph) {
 	return
 }
 
-//go:generate stringer -type=QAbstract3DGraph__ElementType
-//QAbstract3DGraph::ElementType
-type QAbstract3DGraph__ElementType int64
-
-const (
-	QAbstract3DGraph__ElementNone       QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(0)
-	QAbstract3DGraph__ElementSeries     QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(1)
-	QAbstract3DGraph__ElementAxisXLabel QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(2)
-	QAbstract3DGraph__ElementAxisYLabel QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(3)
-	QAbstract3DGraph__ElementAxisZLabel QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(4)
-	QAbstract3DGraph__ElementCustomItem QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(5)
-)
-
-//go:generate stringer -type=QAbstract3DGraph__OptimizationHint
-//QAbstract3DGraph::OptimizationHint
-type QAbstract3DGraph__OptimizationHint int64
-
-const (
-	QAbstract3DGraph__OptimizationDefault QAbstract3DGraph__OptimizationHint = QAbstract3DGraph__OptimizationHint(0)
-	QAbstract3DGraph__OptimizationStatic  QAbstract3DGraph__OptimizationHint = QAbstract3DGraph__OptimizationHint(1)
-)
-
 //go:generate stringer -type=QAbstract3DGraph__SelectionFlag
 //QAbstract3DGraph::SelectionFlag
 type QAbstract3DGraph__SelectionFlag int64
@@ -6772,1322 +5845,27 @@ const (
 	QAbstract3DGraph__ShadowQualitySoftHigh   QAbstract3DGraph__ShadowQuality = QAbstract3DGraph__ShadowQuality(6)
 )
 
-func (ptr *QAbstract3DGraph) RenderToImage(msaaSamples int, imageSize core.QSize_ITF) *gui.QImage {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQImageFromPointer(C.QAbstract3DGraph_RenderToImage(ptr.Pointer(), C.int(int32(msaaSamples)), core.PointerFromQSize(imageSize)))
-		runtime.SetFinalizer(tmpValue, (*gui.QImage).DestroyQImage)
-		return tmpValue
-	}
-	return nil
-}
-
-func QAbstract3DGraph_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DGraph_QAbstract3DGraph_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstract3DGraph) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DGraph_QAbstract3DGraph_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QAbstract3DGraph_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DGraph_QAbstract3DGraph_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstract3DGraph) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DGraph_QAbstract3DGraph_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstract3DGraph) AddCustomItem(item QCustom3DItem_ITF) int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QAbstract3DGraph_AddCustomItem(ptr.Pointer(), PointerFromQCustom3DItem(item))))
-	}
-	return 0
-}
-
-//export callbackQAbstract3DGraph_ActiveInputHandlerChanged
-func callbackQAbstract3DGraph_ActiveInputHandlerChanged(ptr unsafe.Pointer, inputHandler unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "activeInputHandlerChanged"); signal != nil {
-		signal.(func(*QAbstract3DInputHandler))(NewQAbstract3DInputHandlerFromPointer(inputHandler))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectActiveInputHandlerChanged(f func(inputHandler *QAbstract3DInputHandler)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "activeInputHandlerChanged") {
-			C.QAbstract3DGraph_ConnectActiveInputHandlerChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "activeInputHandlerChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "activeInputHandlerChanged", func(inputHandler *QAbstract3DInputHandler) {
-				signal.(func(*QAbstract3DInputHandler))(inputHandler)
-				f(inputHandler)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "activeInputHandlerChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectActiveInputHandlerChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectActiveInputHandlerChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "activeInputHandlerChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) ActiveInputHandlerChanged(inputHandler QAbstract3DInputHandler_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_ActiveInputHandlerChanged(ptr.Pointer(), PointerFromQAbstract3DInputHandler(inputHandler))
-	}
-}
-
-//export callbackQAbstract3DGraph_ActiveThemeChanged
-func callbackQAbstract3DGraph_ActiveThemeChanged(ptr unsafe.Pointer, theme unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "activeThemeChanged"); signal != nil {
-		signal.(func(*Q3DTheme))(NewQ3DThemeFromPointer(theme))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectActiveThemeChanged(f func(theme *Q3DTheme)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "activeThemeChanged") {
-			C.QAbstract3DGraph_ConnectActiveThemeChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "activeThemeChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "activeThemeChanged", func(theme *Q3DTheme) {
-				signal.(func(*Q3DTheme))(theme)
-				f(theme)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "activeThemeChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectActiveThemeChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectActiveThemeChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "activeThemeChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) ActiveThemeChanged(theme Q3DTheme_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_ActiveThemeChanged(ptr.Pointer(), PointerFromQ3DTheme(theme))
-	}
-}
-
-func (ptr *QAbstract3DGraph) AddInputHandler(inputHandler QAbstract3DInputHandler_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_AddInputHandler(ptr.Pointer(), PointerFromQAbstract3DInputHandler(inputHandler))
-	}
-}
-
-func (ptr *QAbstract3DGraph) AddTheme(theme Q3DTheme_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_AddTheme(ptr.Pointer(), PointerFromQ3DTheme(theme))
-	}
-}
-
-//export callbackQAbstract3DGraph_AspectRatioChanged
-func callbackQAbstract3DGraph_AspectRatioChanged(ptr unsafe.Pointer, ratio C.double) {
-	if signal := qt.GetSignal(ptr, "aspectRatioChanged"); signal != nil {
-		signal.(func(float64))(float64(ratio))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectAspectRatioChanged(f func(ratio float64)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "aspectRatioChanged") {
-			C.QAbstract3DGraph_ConnectAspectRatioChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "aspectRatioChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "aspectRatioChanged", func(ratio float64) {
-				signal.(func(float64))(ratio)
-				f(ratio)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "aspectRatioChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectAspectRatioChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectAspectRatioChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "aspectRatioChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) AspectRatioChanged(ratio float64) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_AspectRatioChanged(ptr.Pointer(), C.double(ratio))
-	}
-}
-
-func (ptr *QAbstract3DGraph) ClearSelection() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_ClearSelection(ptr.Pointer())
-	}
-}
-
-//export callbackQAbstract3DGraph_CurrentFpsChanged
-func callbackQAbstract3DGraph_CurrentFpsChanged(ptr unsafe.Pointer, fps C.double) {
-	if signal := qt.GetSignal(ptr, "currentFpsChanged"); signal != nil {
-		signal.(func(float64))(float64(fps))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectCurrentFpsChanged(f func(fps float64)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "currentFpsChanged") {
-			C.QAbstract3DGraph_ConnectCurrentFpsChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "currentFpsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "currentFpsChanged", func(fps float64) {
-				signal.(func(float64))(fps)
-				f(fps)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "currentFpsChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectCurrentFpsChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectCurrentFpsChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "currentFpsChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) CurrentFpsChanged(fps float64) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_CurrentFpsChanged(ptr.Pointer(), C.double(fps))
-	}
-}
-
-//export callbackQAbstract3DGraph_HorizontalAspectRatioChanged
-func callbackQAbstract3DGraph_HorizontalAspectRatioChanged(ptr unsafe.Pointer, ratio C.double) {
-	if signal := qt.GetSignal(ptr, "horizontalAspectRatioChanged"); signal != nil {
-		signal.(func(float64))(float64(ratio))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectHorizontalAspectRatioChanged(f func(ratio float64)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "horizontalAspectRatioChanged") {
-			C.QAbstract3DGraph_ConnectHorizontalAspectRatioChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "horizontalAspectRatioChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "horizontalAspectRatioChanged", func(ratio float64) {
-				signal.(func(float64))(ratio)
-				f(ratio)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "horizontalAspectRatioChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectHorizontalAspectRatioChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectHorizontalAspectRatioChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "horizontalAspectRatioChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) HorizontalAspectRatioChanged(ratio float64) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_HorizontalAspectRatioChanged(ptr.Pointer(), C.double(ratio))
-	}
-}
-
-//export callbackQAbstract3DGraph_LocaleChanged
-func callbackQAbstract3DGraph_LocaleChanged(ptr unsafe.Pointer, locale unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "localeChanged"); signal != nil {
-		signal.(func(*core.QLocale))(core.NewQLocaleFromPointer(locale))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectLocaleChanged(f func(locale *core.QLocale)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "localeChanged") {
-			C.QAbstract3DGraph_ConnectLocaleChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "localeChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "localeChanged", func(locale *core.QLocale) {
-				signal.(func(*core.QLocale))(locale)
-				f(locale)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "localeChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectLocaleChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectLocaleChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "localeChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) LocaleChanged(locale core.QLocale_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_LocaleChanged(ptr.Pointer(), core.PointerFromQLocale(locale))
-	}
-}
-
-//export callbackQAbstract3DGraph_MarginChanged
-func callbackQAbstract3DGraph_MarginChanged(ptr unsafe.Pointer, margin C.double) {
-	if signal := qt.GetSignal(ptr, "marginChanged"); signal != nil {
-		signal.(func(float64))(float64(margin))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectMarginChanged(f func(margin float64)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "marginChanged") {
-			C.QAbstract3DGraph_ConnectMarginChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "marginChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "marginChanged", func(margin float64) {
-				signal.(func(float64))(margin)
-				f(margin)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "marginChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectMarginChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectMarginChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "marginChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) MarginChanged(margin float64) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_MarginChanged(ptr.Pointer(), C.double(margin))
-	}
-}
-
-//export callbackQAbstract3DGraph_MeasureFpsChanged
-func callbackQAbstract3DGraph_MeasureFpsChanged(ptr unsafe.Pointer, enabled C.char) {
-	if signal := qt.GetSignal(ptr, "measureFpsChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectMeasureFpsChanged(f func(enabled bool)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "measureFpsChanged") {
-			C.QAbstract3DGraph_ConnectMeasureFpsChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "measureFpsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "measureFpsChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
-				f(enabled)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "measureFpsChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectMeasureFpsChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectMeasureFpsChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "measureFpsChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) MeasureFpsChanged(enabled bool) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_MeasureFpsChanged(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(enabled))))
-	}
-}
-
-//export callbackQAbstract3DGraph_OptimizationHintsChanged
-func callbackQAbstract3DGraph_OptimizationHintsChanged(ptr unsafe.Pointer, hints C.longlong) {
-	if signal := qt.GetSignal(ptr, "optimizationHintsChanged"); signal != nil {
-		signal.(func(QAbstract3DGraph__OptimizationHint))(QAbstract3DGraph__OptimizationHint(hints))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectOptimizationHintsChanged(f func(hints QAbstract3DGraph__OptimizationHint)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "optimizationHintsChanged") {
-			C.QAbstract3DGraph_ConnectOptimizationHintsChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "optimizationHintsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "optimizationHintsChanged", func(hints QAbstract3DGraph__OptimizationHint) {
-				signal.(func(QAbstract3DGraph__OptimizationHint))(hints)
-				f(hints)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "optimizationHintsChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectOptimizationHintsChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectOptimizationHintsChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "optimizationHintsChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) OptimizationHintsChanged(hints QAbstract3DGraph__OptimizationHint) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_OptimizationHintsChanged(ptr.Pointer(), C.longlong(hints))
-	}
-}
-
-//export callbackQAbstract3DGraph_OrthoProjectionChanged
-func callbackQAbstract3DGraph_OrthoProjectionChanged(ptr unsafe.Pointer, enabled C.char) {
-	if signal := qt.GetSignal(ptr, "orthoProjectionChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectOrthoProjectionChanged(f func(enabled bool)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "orthoProjectionChanged") {
-			C.QAbstract3DGraph_ConnectOrthoProjectionChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "orthoProjectionChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "orthoProjectionChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
-				f(enabled)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "orthoProjectionChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectOrthoProjectionChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectOrthoProjectionChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "orthoProjectionChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) OrthoProjectionChanged(enabled bool) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_OrthoProjectionChanged(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(enabled))))
-	}
-}
-
-//export callbackQAbstract3DGraph_PolarChanged
-func callbackQAbstract3DGraph_PolarChanged(ptr unsafe.Pointer, enabled C.char) {
-	if signal := qt.GetSignal(ptr, "polarChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectPolarChanged(f func(enabled bool)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "polarChanged") {
-			C.QAbstract3DGraph_ConnectPolarChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "polarChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "polarChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
-				f(enabled)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "polarChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectPolarChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectPolarChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "polarChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) PolarChanged(enabled bool) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_PolarChanged(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(enabled))))
-	}
-}
-
-//export callbackQAbstract3DGraph_QueriedGraphPositionChanged
-func callbackQAbstract3DGraph_QueriedGraphPositionChanged(ptr unsafe.Pointer, data unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "queriedGraphPositionChanged"); signal != nil {
-		signal.(func(*gui.QVector3D))(gui.NewQVector3DFromPointer(data))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectQueriedGraphPositionChanged(f func(data *gui.QVector3D)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "queriedGraphPositionChanged") {
-			C.QAbstract3DGraph_ConnectQueriedGraphPositionChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "queriedGraphPositionChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "queriedGraphPositionChanged", func(data *gui.QVector3D) {
-				signal.(func(*gui.QVector3D))(data)
-				f(data)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "queriedGraphPositionChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectQueriedGraphPositionChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectQueriedGraphPositionChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "queriedGraphPositionChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) QueriedGraphPositionChanged(data gui.QVector3D_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_QueriedGraphPositionChanged(ptr.Pointer(), gui.PointerFromQVector3D(data))
-	}
-}
-
-//export callbackQAbstract3DGraph_RadialLabelOffsetChanged
-func callbackQAbstract3DGraph_RadialLabelOffsetChanged(ptr unsafe.Pointer, offset C.float) {
-	if signal := qt.GetSignal(ptr, "radialLabelOffsetChanged"); signal != nil {
-		signal.(func(float32))(float32(offset))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectRadialLabelOffsetChanged(f func(offset float32)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "radialLabelOffsetChanged") {
-			C.QAbstract3DGraph_ConnectRadialLabelOffsetChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "radialLabelOffsetChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "radialLabelOffsetChanged", func(offset float32) {
-				signal.(func(float32))(offset)
-				f(offset)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "radialLabelOffsetChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectRadialLabelOffsetChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectRadialLabelOffsetChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "radialLabelOffsetChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) RadialLabelOffsetChanged(offset float32) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_RadialLabelOffsetChanged(ptr.Pointer(), C.float(offset))
-	}
-}
-
-//export callbackQAbstract3DGraph_ReflectionChanged
-func callbackQAbstract3DGraph_ReflectionChanged(ptr unsafe.Pointer, enabled C.char) {
-	if signal := qt.GetSignal(ptr, "reflectionChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectReflectionChanged(f func(enabled bool)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "reflectionChanged") {
-			C.QAbstract3DGraph_ConnectReflectionChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "reflectionChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "reflectionChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
-				f(enabled)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "reflectionChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectReflectionChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectReflectionChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "reflectionChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) ReflectionChanged(enabled bool) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_ReflectionChanged(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(enabled))))
-	}
-}
-
-//export callbackQAbstract3DGraph_ReflectivityChanged
-func callbackQAbstract3DGraph_ReflectivityChanged(ptr unsafe.Pointer, reflectivity C.double) {
-	if signal := qt.GetSignal(ptr, "reflectivityChanged"); signal != nil {
-		signal.(func(float64))(float64(reflectivity))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectReflectivityChanged(f func(reflectivity float64)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "reflectivityChanged") {
-			C.QAbstract3DGraph_ConnectReflectivityChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "reflectivityChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "reflectivityChanged", func(reflectivity float64) {
-				signal.(func(float64))(reflectivity)
-				f(reflectivity)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "reflectivityChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectReflectivityChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectReflectivityChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "reflectivityChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) ReflectivityChanged(reflectivity float64) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_ReflectivityChanged(ptr.Pointer(), C.double(reflectivity))
-	}
-}
-
-func (ptr *QAbstract3DGraph) ReleaseCustomItem(item QCustom3DItem_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_ReleaseCustomItem(ptr.Pointer(), PointerFromQCustom3DItem(item))
-	}
-}
-
-func (ptr *QAbstract3DGraph) ReleaseInputHandler(inputHandler QAbstract3DInputHandler_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_ReleaseInputHandler(ptr.Pointer(), PointerFromQAbstract3DInputHandler(inputHandler))
-	}
-}
-
-func (ptr *QAbstract3DGraph) ReleaseTheme(theme Q3DTheme_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_ReleaseTheme(ptr.Pointer(), PointerFromQ3DTheme(theme))
-	}
-}
-
-func (ptr *QAbstract3DGraph) RemoveCustomItem(item QCustom3DItem_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_RemoveCustomItem(ptr.Pointer(), PointerFromQCustom3DItem(item))
-	}
-}
-
-func (ptr *QAbstract3DGraph) RemoveCustomItemAt(position gui.QVector3D_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_RemoveCustomItemAt(ptr.Pointer(), gui.PointerFromQVector3D(position))
-	}
-}
-
-func (ptr *QAbstract3DGraph) RemoveCustomItems() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_RemoveCustomItems(ptr.Pointer())
-	}
-}
-
-//export callbackQAbstract3DGraph_SelectedElementChanged
-func callbackQAbstract3DGraph_SelectedElementChanged(ptr unsafe.Pointer, ty C.longlong) {
-	if signal := qt.GetSignal(ptr, "selectedElementChanged"); signal != nil {
-		signal.(func(QAbstract3DGraph__ElementType))(QAbstract3DGraph__ElementType(ty))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectSelectedElementChanged(f func(ty QAbstract3DGraph__ElementType)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "selectedElementChanged") {
-			C.QAbstract3DGraph_ConnectSelectedElementChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "selectedElementChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectedElementChanged", func(ty QAbstract3DGraph__ElementType) {
-				signal.(func(QAbstract3DGraph__ElementType))(ty)
-				f(ty)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectedElementChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectSelectedElementChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectSelectedElementChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "selectedElementChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) SelectedElementChanged(ty QAbstract3DGraph__ElementType) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SelectedElementChanged(ptr.Pointer(), C.longlong(ty))
-	}
-}
-
-//export callbackQAbstract3DGraph_SelectionModeChanged
-func callbackQAbstract3DGraph_SelectionModeChanged(ptr unsafe.Pointer, mode C.longlong) {
-	if signal := qt.GetSignal(ptr, "selectionModeChanged"); signal != nil {
-		signal.(func(QAbstract3DGraph__SelectionFlag))(QAbstract3DGraph__SelectionFlag(mode))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectSelectionModeChanged(f func(mode QAbstract3DGraph__SelectionFlag)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "selectionModeChanged") {
-			C.QAbstract3DGraph_ConnectSelectionModeChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "selectionModeChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectionModeChanged", func(mode QAbstract3DGraph__SelectionFlag) {
-				signal.(func(QAbstract3DGraph__SelectionFlag))(mode)
-				f(mode)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectionModeChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectSelectionModeChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectSelectionModeChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "selectionModeChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) SelectionModeChanged(mode QAbstract3DGraph__SelectionFlag) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SelectionModeChanged(ptr.Pointer(), C.longlong(mode))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetActiveInputHandler(inputHandler QAbstract3DInputHandler_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetActiveInputHandler(ptr.Pointer(), PointerFromQAbstract3DInputHandler(inputHandler))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetActiveTheme(theme Q3DTheme_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetActiveTheme(ptr.Pointer(), PointerFromQ3DTheme(theme))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetAspectRatio(ratio float64) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetAspectRatio(ptr.Pointer(), C.double(ratio))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetHorizontalAspectRatio(ratio float64) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetHorizontalAspectRatio(ptr.Pointer(), C.double(ratio))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetLocale(locale core.QLocale_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetLocale(ptr.Pointer(), core.PointerFromQLocale(locale))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetMargin(margin float64) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetMargin(ptr.Pointer(), C.double(margin))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetMeasureFps(enable bool) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetMeasureFps(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(enable))))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetOptimizationHints(hints QAbstract3DGraph__OptimizationHint) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetOptimizationHints(ptr.Pointer(), C.longlong(hints))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetOrthoProjection(enable bool) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetOrthoProjection(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(enable))))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetPolar(enable bool) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetPolar(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(enable))))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetRadialLabelOffset(offset float32) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetRadialLabelOffset(ptr.Pointer(), C.float(offset))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetReflection(enable bool) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetReflection(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(enable))))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetReflectivity(reflectivity float64) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetReflectivity(ptr.Pointer(), C.double(reflectivity))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetSelectionMode(mode QAbstract3DGraph__SelectionFlag) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetSelectionMode(ptr.Pointer(), C.longlong(mode))
-	}
-}
-
-func (ptr *QAbstract3DGraph) SetShadowQuality(quality QAbstract3DGraph__ShadowQuality) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_SetShadowQuality(ptr.Pointer(), C.longlong(quality))
-	}
-}
-
-//export callbackQAbstract3DGraph_ShadowQualityChanged
-func callbackQAbstract3DGraph_ShadowQualityChanged(ptr unsafe.Pointer, quality C.longlong) {
-	if signal := qt.GetSignal(ptr, "shadowQualityChanged"); signal != nil {
-		signal.(func(QAbstract3DGraph__ShadowQuality))(QAbstract3DGraph__ShadowQuality(quality))
-	}
-
-}
-
-func (ptr *QAbstract3DGraph) ConnectShadowQualityChanged(f func(quality QAbstract3DGraph__ShadowQuality)) {
-	if ptr.Pointer() != nil {
-
-		if !qt.ExistsSignal(ptr.Pointer(), "shadowQualityChanged") {
-			C.QAbstract3DGraph_ConnectShadowQualityChanged(ptr.Pointer())
-		}
-
-		if signal := qt.LendSignal(ptr.Pointer(), "shadowQualityChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "shadowQualityChanged", func(quality QAbstract3DGraph__ShadowQuality) {
-				signal.(func(QAbstract3DGraph__ShadowQuality))(quality)
-				f(quality)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "shadowQualityChanged", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectShadowQualityChanged() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DisconnectShadowQualityChanged(ptr.Pointer())
-		qt.DisconnectSignal(ptr.Pointer(), "shadowQualityChanged")
-	}
-}
-
-func (ptr *QAbstract3DGraph) ShadowQualityChanged(quality QAbstract3DGraph__ShadowQuality) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_ShadowQualityChanged(ptr.Pointer(), C.longlong(quality))
-	}
-}
-
-//export callbackQAbstract3DGraph_DestroyQAbstract3DGraph
-func callbackQAbstract3DGraph_DestroyQAbstract3DGraph(ptr unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "~QAbstract3DGraph"); signal != nil {
-		signal.(func())()
-	} else {
-		NewQAbstract3DGraphFromPointer(ptr).DestroyQAbstract3DGraphDefault()
-	}
-}
-
-func (ptr *QAbstract3DGraph) ConnectDestroyQAbstract3DGraph(f func()) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "~QAbstract3DGraph"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DGraph", func() {
-				signal.(func())()
-				f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DGraph", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectDestroyQAbstract3DGraph() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "~QAbstract3DGraph")
-	}
-}
-
-func (ptr *QAbstract3DGraph) DestroyQAbstract3DGraph() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DestroyQAbstract3DGraph(ptr.Pointer())
-		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
-	}
-}
-
-func (ptr *QAbstract3DGraph) DestroyQAbstract3DGraphDefault() {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph_DestroyQAbstract3DGraphDefault(ptr.Pointer())
-		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
-	}
-}
-
-func (ptr *QAbstract3DGraph) Scene() *Q3DScene {
-	if ptr.Pointer() != nil {
-		return NewQ3DSceneFromPointer(C.QAbstract3DGraph_Scene(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) ActiveTheme() *Q3DTheme {
-	if ptr.Pointer() != nil {
-		return NewQ3DThemeFromPointer(C.QAbstract3DGraph_ActiveTheme(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) SelectedAxis() *QAbstract3DAxis {
-	if ptr.Pointer() != nil {
-		return NewQAbstract3DAxisFromPointer(C.QAbstract3DGraph_SelectedAxis(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) SelectedElement() QAbstract3DGraph__ElementType {
-	if ptr.Pointer() != nil {
-		return QAbstract3DGraph__ElementType(C.QAbstract3DGraph_SelectedElement(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) OptimizationHints() QAbstract3DGraph__OptimizationHint {
-	if ptr.Pointer() != nil {
-		return QAbstract3DGraph__OptimizationHint(C.QAbstract3DGraph_OptimizationHints(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) SelectionMode() QAbstract3DGraph__SelectionFlag {
-	if ptr.Pointer() != nil {
-		return QAbstract3DGraph__SelectionFlag(C.QAbstract3DGraph_SelectionMode(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) ShadowQuality() QAbstract3DGraph__ShadowQuality {
-	if ptr.Pointer() != nil {
-		return QAbstract3DGraph__ShadowQuality(C.QAbstract3DGraph_ShadowQuality(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) ActiveInputHandler() *QAbstract3DInputHandler {
-	if ptr.Pointer() != nil {
-		return NewQAbstract3DInputHandlerFromPointer(C.QAbstract3DGraph_ActiveInputHandler(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) SelectedCustomItem() *QCustom3DItem {
-	if ptr.Pointer() != nil {
-		return NewQCustom3DItemFromPointer(C.QAbstract3DGraph_SelectedCustomItem(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) Themes() []*Q3DTheme {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*Q3DTheme {
-			out := make([]*Q3DTheme, int(l.len))
-			tmpList := NewQAbstract3DGraphFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__themes_atList(i)
-			}
-			return out
-		}(C.QAbstract3DGraph_Themes(ptr.Pointer()))
-	}
-	return make([]*Q3DTheme, 0)
-}
-
-func (ptr *QAbstract3DGraph) InputHandlers() []*QAbstract3DInputHandler {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*QAbstract3DInputHandler {
-			out := make([]*QAbstract3DInputHandler, int(l.len))
-			tmpList := NewQAbstract3DGraphFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__inputHandlers_atList(i)
-			}
-			return out
-		}(C.QAbstract3DGraph_InputHandlers(ptr.Pointer()))
-	}
-	return make([]*QAbstract3DInputHandler, 0)
-}
-
-func (ptr *QAbstract3DGraph) CustomItems() []*QCustom3DItem {
-	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []*QCustom3DItem {
-			out := make([]*QCustom3DItem, int(l.len))
-			tmpList := NewQAbstract3DGraphFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__customItems_atList(i)
-			}
-			return out
-		}(C.QAbstract3DGraph_CustomItems(ptr.Pointer()))
-	}
-	return make([]*QCustom3DItem, 0)
-}
-
-func (ptr *QAbstract3DGraph) Locale() *core.QLocale {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQLocaleFromPointer(C.QAbstract3DGraph_Locale(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QLocale).DestroyQLocale)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) QueriedGraphPosition() *gui.QVector3D {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.QAbstract3DGraph_QueriedGraphPosition(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) HasContext() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DGraph_HasContext(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QAbstract3DGraph) IsOrthoProjection() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DGraph_IsOrthoProjection(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QAbstract3DGraph) IsPolar() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DGraph_IsPolar(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QAbstract3DGraph) IsReflection() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DGraph_IsReflection(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QAbstract3DGraph) MeasureFps() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DGraph_MeasureFps(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQAbstract3DGraph_ShadowsSupported
-func callbackQAbstract3DGraph_ShadowsSupported(ptr unsafe.Pointer) C.char {
-	if signal := qt.GetSignal(ptr, "shadowsSupported"); signal != nil {
-		return C.char(int8(qt.GoBoolToInt(signal.(func() bool)())))
-	}
-
-	return C.char(int8(qt.GoBoolToInt(NewQAbstract3DGraphFromPointer(ptr).ShadowsSupportedDefault())))
-}
-
-func (ptr *QAbstract3DGraph) ConnectShadowsSupported(f func() bool) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "shadowsSupported"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "shadowsSupported", func() bool {
-				signal.(func() bool)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "shadowsSupported", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectShadowsSupported() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "shadowsSupported")
-	}
-}
-
-func (ptr *QAbstract3DGraph) ShadowsSupported() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DGraph_ShadowsSupported(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QAbstract3DGraph) ShadowsSupportedDefault() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DGraph_ShadowsSupportedDefault(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQAbstract3DGraph_MetaObject
-func callbackQAbstract3DGraph_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQAbstract3DGraphFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QAbstract3DGraph) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DGraph) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QAbstract3DGraph) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstract3DGraph_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstract3DGraph_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) RadialLabelOffset() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QAbstract3DGraph_RadialLabelOffset(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) SelectedCustomItemIndex() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QAbstract3DGraph_SelectedCustomItemIndex(ptr.Pointer())))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) SelectedLabelIndex() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QAbstract3DGraph_SelectedLabelIndex(ptr.Pointer())))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) AspectRatio() float64 {
-	if ptr.Pointer() != nil {
-		return float64(C.QAbstract3DGraph_AspectRatio(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) CurrentFps() float64 {
-	if ptr.Pointer() != nil {
-		return float64(C.QAbstract3DGraph_CurrentFps(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) HorizontalAspectRatio() float64 {
-	if ptr.Pointer() != nil {
-		return float64(C.QAbstract3DGraph_HorizontalAspectRatio(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) Margin() float64 {
-	if ptr.Pointer() != nil {
-		return float64(C.QAbstract3DGraph_Margin(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) Reflectivity() float64 {
-	if ptr.Pointer() != nil {
-		return float64(C.QAbstract3DGraph_Reflectivity(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DGraph) __themes_atList(i int) *Q3DTheme {
-	if ptr.Pointer() != nil {
-		return NewQ3DThemeFromPointer(C.QAbstract3DGraph___themes_atList(ptr.Pointer(), C.int(int32(i))))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) __themes_setList(i Q3DTheme_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph___themes_setList(ptr.Pointer(), PointerFromQ3DTheme(i))
-	}
-}
-
-func (ptr *QAbstract3DGraph) __themes_newList() unsafe.Pointer {
-	return C.QAbstract3DGraph___themes_newList(ptr.Pointer())
-}
-
-func (ptr *QAbstract3DGraph) __inputHandlers_atList(i int) *QAbstract3DInputHandler {
-	if ptr.Pointer() != nil {
-		return NewQAbstract3DInputHandlerFromPointer(C.QAbstract3DGraph___inputHandlers_atList(ptr.Pointer(), C.int(int32(i))))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) __inputHandlers_setList(i QAbstract3DInputHandler_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph___inputHandlers_setList(ptr.Pointer(), PointerFromQAbstract3DInputHandler(i))
-	}
-}
-
-func (ptr *QAbstract3DGraph) __inputHandlers_newList() unsafe.Pointer {
-	return C.QAbstract3DGraph___inputHandlers_newList(ptr.Pointer())
-}
-
-func (ptr *QAbstract3DGraph) __customItems_atList(i int) *QCustom3DItem {
-	if ptr.Pointer() != nil {
-		return NewQCustom3DItemFromPointer(C.QAbstract3DGraph___customItems_atList(ptr.Pointer(), C.int(int32(i))))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DGraph) __customItems_setList(i QCustom3DItem_ITF) {
-	if ptr.Pointer() != nil {
-		C.QAbstract3DGraph___customItems_setList(ptr.Pointer(), PointerFromQCustom3DItem(i))
-	}
-}
-
-func (ptr *QAbstract3DGraph) __customItems_newList() unsafe.Pointer {
-	return C.QAbstract3DGraph___customItems_newList(ptr.Pointer())
-}
+//go:generate stringer -type=QAbstract3DGraph__ElementType
+//QAbstract3DGraph::ElementType
+type QAbstract3DGraph__ElementType int64
+
+const (
+	QAbstract3DGraph__ElementNone       QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(0)
+	QAbstract3DGraph__ElementSeries     QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(1)
+	QAbstract3DGraph__ElementAxisXLabel QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(2)
+	QAbstract3DGraph__ElementAxisYLabel QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(3)
+	QAbstract3DGraph__ElementAxisZLabel QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(4)
+	QAbstract3DGraph__ElementCustomItem QAbstract3DGraph__ElementType = QAbstract3DGraph__ElementType(5)
+)
+
+//go:generate stringer -type=QAbstract3DGraph__OptimizationHint
+//QAbstract3DGraph::OptimizationHint
+type QAbstract3DGraph__OptimizationHint int64
+
+const (
+	QAbstract3DGraph__OptimizationDefault QAbstract3DGraph__OptimizationHint = QAbstract3DGraph__OptimizationHint(0)
+	QAbstract3DGraph__OptimizationStatic  QAbstract3DGraph__OptimizationHint = QAbstract3DGraph__OptimizationHint(1)
+)
 
 type QAbstract3DInputHandler struct {
 	ptr unsafe.Pointer
@@ -8141,66 +5919,26 @@ func NewQAbstract3DInputHandler(parent core.QObject_ITF) *QAbstract3DInputHandle
 	return NewQAbstract3DInputHandlerFromPointer(C.QAbstract3DInputHandler_NewQAbstract3DInputHandler(core.PointerFromQObject(parent)))
 }
 
-func QAbstract3DInputHandler_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QAbstract3DInputHandler) InputPosition() *core.QPoint {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQPointFromPointer(C.QAbstract3DInputHandler_InputPosition(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+		return tmpValue
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DInputHandler_QAbstract3DInputHandler_Tr(sC, cC, C.int(int32(n))))
+	return nil
 }
 
-func (ptr *QAbstract3DInputHandler) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QAbstract3DInputHandler) InputView() QAbstract3DInputHandler__InputView {
+	if ptr.Pointer() != nil {
+		return QAbstract3DInputHandler__InputView(C.QAbstract3DInputHandler_InputView(ptr.Pointer()))
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DInputHandler_QAbstract3DInputHandler_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QAbstract3DInputHandler_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DInputHandler_QAbstract3DInputHandler_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstract3DInputHandler) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DInputHandler_QAbstract3DInputHandler_TrUtf8(sC, cC, C.int(int32(n))))
+	return 0
 }
 
 //export callbackQAbstract3DInputHandler_InputViewChanged
 func callbackQAbstract3DInputHandler_InputViewChanged(ptr unsafe.Pointer, view C.longlong) {
 	if signal := qt.GetSignal(ptr, "inputViewChanged"); signal != nil {
-		signal.(func(QAbstract3DInputHandler__InputView))(QAbstract3DInputHandler__InputView(view))
+		(*(*func(QAbstract3DInputHandler__InputView))(signal))(QAbstract3DInputHandler__InputView(view))
 	}
 
 }
@@ -8213,12 +5951,13 @@ func (ptr *QAbstract3DInputHandler) ConnectInputViewChanged(f func(view QAbstrac
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "inputViewChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "inputViewChanged", func(view QAbstract3DInputHandler__InputView) {
-				signal.(func(QAbstract3DInputHandler__InputView))(view)
+			f := func(view QAbstract3DInputHandler__InputView) {
+				(*(*func(QAbstract3DInputHandler__InputView))(signal))(view)
 				f(view)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "inputViewChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "inputViewChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "inputViewChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8239,7 +5978,7 @@ func (ptr *QAbstract3DInputHandler) InputViewChanged(view QAbstract3DInputHandle
 //export callbackQAbstract3DInputHandler_MouseDoubleClickEvent
 func callbackQAbstract3DInputHandler_MouseDoubleClickEvent(ptr unsafe.Pointer, event unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "mouseDoubleClickEvent"); signal != nil {
-		signal.(func(*gui.QMouseEvent))(gui.NewQMouseEventFromPointer(event))
+		(*(*func(*gui.QMouseEvent))(signal))(gui.NewQMouseEventFromPointer(event))
 	} else {
 		NewQAbstract3DInputHandlerFromPointer(ptr).MouseDoubleClickEventDefault(gui.NewQMouseEventFromPointer(event))
 	}
@@ -8249,12 +5988,13 @@ func (ptr *QAbstract3DInputHandler) ConnectMouseDoubleClickEvent(f func(event *g
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "mouseDoubleClickEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "mouseDoubleClickEvent", func(event *gui.QMouseEvent) {
-				signal.(func(*gui.QMouseEvent))(event)
+			f := func(event *gui.QMouseEvent) {
+				(*(*func(*gui.QMouseEvent))(signal))(event)
 				f(event)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "mouseDoubleClickEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "mouseDoubleClickEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "mouseDoubleClickEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8281,7 +6021,7 @@ func (ptr *QAbstract3DInputHandler) MouseDoubleClickEventDefault(event gui.QMous
 //export callbackQAbstract3DInputHandler_MouseMoveEvent
 func callbackQAbstract3DInputHandler_MouseMoveEvent(ptr unsafe.Pointer, event unsafe.Pointer, mousePos unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "mouseMoveEvent"); signal != nil {
-		signal.(func(*gui.QMouseEvent, *core.QPoint))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
+		(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	} else {
 		NewQAbstract3DInputHandlerFromPointer(ptr).MouseMoveEventDefault(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	}
@@ -8291,12 +6031,13 @@ func (ptr *QAbstract3DInputHandler) ConnectMouseMoveEvent(f func(event *gui.QMou
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "mouseMoveEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "mouseMoveEvent", func(event *gui.QMouseEvent, mousePos *core.QPoint) {
-				signal.(func(*gui.QMouseEvent, *core.QPoint))(event, mousePos)
+			f := func(event *gui.QMouseEvent, mousePos *core.QPoint) {
+				(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(event, mousePos)
 				f(event, mousePos)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "mouseMoveEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "mouseMoveEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "mouseMoveEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8323,7 +6064,7 @@ func (ptr *QAbstract3DInputHandler) MouseMoveEventDefault(event gui.QMouseEvent_
 //export callbackQAbstract3DInputHandler_MousePressEvent
 func callbackQAbstract3DInputHandler_MousePressEvent(ptr unsafe.Pointer, event unsafe.Pointer, mousePos unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "mousePressEvent"); signal != nil {
-		signal.(func(*gui.QMouseEvent, *core.QPoint))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
+		(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	} else {
 		NewQAbstract3DInputHandlerFromPointer(ptr).MousePressEventDefault(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	}
@@ -8333,12 +6074,13 @@ func (ptr *QAbstract3DInputHandler) ConnectMousePressEvent(f func(event *gui.QMo
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "mousePressEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "mousePressEvent", func(event *gui.QMouseEvent, mousePos *core.QPoint) {
-				signal.(func(*gui.QMouseEvent, *core.QPoint))(event, mousePos)
+			f := func(event *gui.QMouseEvent, mousePos *core.QPoint) {
+				(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(event, mousePos)
 				f(event, mousePos)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "mousePressEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "mousePressEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "mousePressEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8365,7 +6107,7 @@ func (ptr *QAbstract3DInputHandler) MousePressEventDefault(event gui.QMouseEvent
 //export callbackQAbstract3DInputHandler_MouseReleaseEvent
 func callbackQAbstract3DInputHandler_MouseReleaseEvent(ptr unsafe.Pointer, event unsafe.Pointer, mousePos unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "mouseReleaseEvent"); signal != nil {
-		signal.(func(*gui.QMouseEvent, *core.QPoint))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
+		(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	} else {
 		NewQAbstract3DInputHandlerFromPointer(ptr).MouseReleaseEventDefault(gui.NewQMouseEventFromPointer(event), core.NewQPointFromPointer(mousePos))
 	}
@@ -8375,12 +6117,13 @@ func (ptr *QAbstract3DInputHandler) ConnectMouseReleaseEvent(f func(event *gui.Q
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "mouseReleaseEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "mouseReleaseEvent", func(event *gui.QMouseEvent, mousePos *core.QPoint) {
-				signal.(func(*gui.QMouseEvent, *core.QPoint))(event, mousePos)
+			f := func(event *gui.QMouseEvent, mousePos *core.QPoint) {
+				(*(*func(*gui.QMouseEvent, *core.QPoint))(signal))(event, mousePos)
 				f(event, mousePos)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "mouseReleaseEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "mouseReleaseEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "mouseReleaseEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8407,7 +6150,7 @@ func (ptr *QAbstract3DInputHandler) MouseReleaseEventDefault(event gui.QMouseEve
 //export callbackQAbstract3DInputHandler_PositionChanged
 func callbackQAbstract3DInputHandler_PositionChanged(ptr unsafe.Pointer, position unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "positionChanged"); signal != nil {
-		signal.(func(*core.QPoint))(core.NewQPointFromPointer(position))
+		(*(*func(*core.QPoint))(signal))(core.NewQPointFromPointer(position))
 	}
 
 }
@@ -8420,12 +6163,13 @@ func (ptr *QAbstract3DInputHandler) ConnectPositionChanged(f func(position *core
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "positionChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "positionChanged", func(position *core.QPoint) {
-				signal.(func(*core.QPoint))(position)
+			f := func(position *core.QPoint) {
+				(*(*func(*core.QPoint))(signal))(position)
 				f(position)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "positionChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "positionChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "positionChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8443,10 +6187,33 @@ func (ptr *QAbstract3DInputHandler) PositionChanged(position core.QPoint_ITF) {
 	}
 }
 
+func (ptr *QAbstract3DInputHandler) PrevDistance() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QAbstract3DInputHandler_PrevDistance(ptr.Pointer())))
+	}
+	return 0
+}
+
+func (ptr *QAbstract3DInputHandler) PreviousInputPos() *core.QPoint {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQPointFromPointer(C.QAbstract3DInputHandler_PreviousInputPos(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+		return tmpValue
+	}
+	return nil
+}
+
+func (ptr *QAbstract3DInputHandler) Scene() *Q3DScene {
+	if ptr.Pointer() != nil {
+		return NewQ3DSceneFromPointer(C.QAbstract3DInputHandler_Scene(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQAbstract3DInputHandler_SceneChanged
 func callbackQAbstract3DInputHandler_SceneChanged(ptr unsafe.Pointer, scene unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "sceneChanged"); signal != nil {
-		signal.(func(*Q3DScene))(NewQ3DSceneFromPointer(scene))
+		(*(*func(*Q3DScene))(signal))(NewQ3DSceneFromPointer(scene))
 	}
 
 }
@@ -8459,12 +6226,13 @@ func (ptr *QAbstract3DInputHandler) ConnectSceneChanged(f func(scene *Q3DScene))
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "sceneChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "sceneChanged", func(scene *Q3DScene) {
-				signal.(func(*Q3DScene))(scene)
+			f := func(scene *Q3DScene) {
+				(*(*func(*Q3DScene))(signal))(scene)
 				f(scene)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "sceneChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "sceneChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "sceneChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8515,7 +6283,7 @@ func (ptr *QAbstract3DInputHandler) SetScene(scene Q3DScene_ITF) {
 //export callbackQAbstract3DInputHandler_TouchEvent
 func callbackQAbstract3DInputHandler_TouchEvent(ptr unsafe.Pointer, event unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "touchEvent"); signal != nil {
-		signal.(func(*gui.QTouchEvent))(gui.NewQTouchEventFromPointer(event))
+		(*(*func(*gui.QTouchEvent))(signal))(gui.NewQTouchEventFromPointer(event))
 	} else {
 		NewQAbstract3DInputHandlerFromPointer(ptr).TouchEventDefault(gui.NewQTouchEventFromPointer(event))
 	}
@@ -8525,12 +6293,13 @@ func (ptr *QAbstract3DInputHandler) ConnectTouchEvent(f func(event *gui.QTouchEv
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "touchEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "touchEvent", func(event *gui.QTouchEvent) {
-				signal.(func(*gui.QTouchEvent))(event)
+			f := func(event *gui.QTouchEvent) {
+				(*(*func(*gui.QTouchEvent))(signal))(event)
 				f(event)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "touchEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "touchEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "touchEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8557,7 +6326,7 @@ func (ptr *QAbstract3DInputHandler) TouchEventDefault(event gui.QTouchEvent_ITF)
 //export callbackQAbstract3DInputHandler_WheelEvent
 func callbackQAbstract3DInputHandler_WheelEvent(ptr unsafe.Pointer, event unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "wheelEvent"); signal != nil {
-		signal.(func(*gui.QWheelEvent))(gui.NewQWheelEventFromPointer(event))
+		(*(*func(*gui.QWheelEvent))(signal))(gui.NewQWheelEventFromPointer(event))
 	} else {
 		NewQAbstract3DInputHandlerFromPointer(ptr).WheelEventDefault(gui.NewQWheelEventFromPointer(event))
 	}
@@ -8567,12 +6336,13 @@ func (ptr *QAbstract3DInputHandler) ConnectWheelEvent(f func(event *gui.QWheelEv
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "wheelEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "wheelEvent", func(event *gui.QWheelEvent) {
-				signal.(func(*gui.QWheelEvent))(event)
+			f := func(event *gui.QWheelEvent) {
+				(*(*func(*gui.QWheelEvent))(signal))(event)
 				f(event)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "wheelEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "wheelEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "wheelEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8599,7 +6369,7 @@ func (ptr *QAbstract3DInputHandler) WheelEventDefault(event gui.QWheelEvent_ITF)
 //export callbackQAbstract3DInputHandler_DestroyQAbstract3DInputHandler
 func callbackQAbstract3DInputHandler_DestroyQAbstract3DInputHandler(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QAbstract3DInputHandler"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQAbstract3DInputHandlerFromPointer(ptr).DestroyQAbstract3DInputHandlerDefault()
 	}
@@ -8609,12 +6379,13 @@ func (ptr *QAbstract3DInputHandler) ConnectDestroyQAbstract3DInputHandler(f func
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QAbstract3DInputHandler"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DInputHandler", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DInputHandler", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DInputHandler", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DInputHandler", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8640,89 +6411,6 @@ func (ptr *QAbstract3DInputHandler) DestroyQAbstract3DInputHandlerDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QAbstract3DInputHandler) Scene() *Q3DScene {
-	if ptr.Pointer() != nil {
-		return NewQ3DSceneFromPointer(C.QAbstract3DInputHandler_Scene(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DInputHandler) InputView() QAbstract3DInputHandler__InputView {
-	if ptr.Pointer() != nil {
-		return QAbstract3DInputHandler__InputView(C.QAbstract3DInputHandler_InputView(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DInputHandler) InputPosition() *core.QPoint {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQPointFromPointer(C.QAbstract3DInputHandler_InputPosition(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DInputHandler) PreviousInputPos() *core.QPoint {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQPointFromPointer(C.QAbstract3DInputHandler_PreviousInputPos(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-		return tmpValue
-	}
-	return nil
-}
-
-//export callbackQAbstract3DInputHandler_MetaObject
-func callbackQAbstract3DInputHandler_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQAbstract3DInputHandlerFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QAbstract3DInputHandler) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DInputHandler) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QAbstract3DInputHandler) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstract3DInputHandler_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DInputHandler) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstract3DInputHandler_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DInputHandler) PrevDistance() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QAbstract3DInputHandler_PrevDistance(ptr.Pointer())))
-	}
-	return 0
 }
 
 type QAbstract3DSeries struct {
@@ -8763,6 +6451,17 @@ func NewQAbstract3DSeriesFromPointer(ptr unsafe.Pointer) (n *QAbstract3DSeries) 
 	return
 }
 
+//go:generate stringer -type=QAbstract3DSeries__SeriesType
+//QAbstract3DSeries::SeriesType
+type QAbstract3DSeries__SeriesType int64
+
+const (
+	QAbstract3DSeries__SeriesTypeNone    QAbstract3DSeries__SeriesType = QAbstract3DSeries__SeriesType(0)
+	QAbstract3DSeries__SeriesTypeBar     QAbstract3DSeries__SeriesType = QAbstract3DSeries__SeriesType(1)
+	QAbstract3DSeries__SeriesTypeScatter QAbstract3DSeries__SeriesType = QAbstract3DSeries__SeriesType(2)
+	QAbstract3DSeries__SeriesTypeSurface QAbstract3DSeries__SeriesType = QAbstract3DSeries__SeriesType(4)
+)
+
 //go:generate stringer -type=QAbstract3DSeries__Mesh
 //QAbstract3DSeries::Mesh
 type QAbstract3DSeries__Mesh int64
@@ -8782,77 +6481,19 @@ const (
 	QAbstract3DSeries__MeshPoint       QAbstract3DSeries__Mesh = QAbstract3DSeries__Mesh(11)
 )
 
-//go:generate stringer -type=QAbstract3DSeries__SeriesType
-//QAbstract3DSeries::SeriesType
-type QAbstract3DSeries__SeriesType int64
-
-const (
-	QAbstract3DSeries__SeriesTypeNone    QAbstract3DSeries__SeriesType = QAbstract3DSeries__SeriesType(0)
-	QAbstract3DSeries__SeriesTypeBar     QAbstract3DSeries__SeriesType = QAbstract3DSeries__SeriesType(1)
-	QAbstract3DSeries__SeriesTypeScatter QAbstract3DSeries__SeriesType = QAbstract3DSeries__SeriesType(2)
-	QAbstract3DSeries__SeriesTypeSurface QAbstract3DSeries__SeriesType = QAbstract3DSeries__SeriesType(4)
-)
-
-func QAbstract3DSeries_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QAbstract3DSeries) BaseColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.QAbstract3DSeries_BaseColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DSeries_QAbstract3DSeries_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstract3DSeries) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DSeries_QAbstract3DSeries_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QAbstract3DSeries_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DSeries_QAbstract3DSeries_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstract3DSeries) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstract3DSeries_QAbstract3DSeries_TrUtf8(sC, cC, C.int(int32(n))))
+	return nil
 }
 
 //export callbackQAbstract3DSeries_BaseColorChanged
 func callbackQAbstract3DSeries_BaseColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "baseColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -8865,12 +6506,13 @@ func (ptr *QAbstract3DSeries) ConnectBaseColorChanged(f func(color *gui.QColor))
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "baseColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "baseColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "baseColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "baseColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "baseColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8888,10 +6530,19 @@ func (ptr *QAbstract3DSeries) BaseColorChanged(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *QAbstract3DSeries) BaseGradient() *gui.QLinearGradient {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQLinearGradientFromPointer(C.QAbstract3DSeries_BaseGradient(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQAbstract3DSeries_BaseGradientChanged
 func callbackQAbstract3DSeries_BaseGradientChanged(ptr unsafe.Pointer, gradient unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "baseGradientChanged"); signal != nil {
-		signal.(func(*gui.QLinearGradient))(gui.NewQLinearGradientFromPointer(gradient))
+		(*(*func(*gui.QLinearGradient))(signal))(gui.NewQLinearGradientFromPointer(gradient))
 	}
 
 }
@@ -8904,12 +6555,13 @@ func (ptr *QAbstract3DSeries) ConnectBaseGradientChanged(f func(gradient *gui.QL
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "baseGradientChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "baseGradientChanged", func(gradient *gui.QLinearGradient) {
-				signal.(func(*gui.QLinearGradient))(gradient)
+			f := func(gradient *gui.QLinearGradient) {
+				(*(*func(*gui.QLinearGradient))(signal))(gradient)
 				f(gradient)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "baseGradientChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "baseGradientChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "baseGradientChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8927,10 +6579,17 @@ func (ptr *QAbstract3DSeries) BaseGradientChanged(gradient gui.QLinearGradient_I
 	}
 }
 
+func (ptr *QAbstract3DSeries) ColorStyle() Q3DTheme__ColorStyle {
+	if ptr.Pointer() != nil {
+		return Q3DTheme__ColorStyle(C.QAbstract3DSeries_ColorStyle(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQAbstract3DSeries_ColorStyleChanged
 func callbackQAbstract3DSeries_ColorStyleChanged(ptr unsafe.Pointer, style C.longlong) {
 	if signal := qt.GetSignal(ptr, "colorStyleChanged"); signal != nil {
-		signal.(func(Q3DTheme__ColorStyle))(Q3DTheme__ColorStyle(style))
+		(*(*func(Q3DTheme__ColorStyle))(signal))(Q3DTheme__ColorStyle(style))
 	}
 
 }
@@ -8943,12 +6602,13 @@ func (ptr *QAbstract3DSeries) ConnectColorStyleChanged(f func(style Q3DTheme__Co
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "colorStyleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "colorStyleChanged", func(style Q3DTheme__ColorStyle) {
-				signal.(func(Q3DTheme__ColorStyle))(style)
+			f := func(style Q3DTheme__ColorStyle) {
+				(*(*func(Q3DTheme__ColorStyle))(signal))(style)
 				f(style)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "colorStyleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "colorStyleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "colorStyleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -8966,10 +6626,38 @@ func (ptr *QAbstract3DSeries) ColorStyleChanged(style Q3DTheme__ColorStyle) {
 	}
 }
 
+func (ptr *QAbstract3DSeries) IsItemLabelVisible() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QAbstract3DSeries_IsItemLabelVisible(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QAbstract3DSeries) IsMeshSmooth() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QAbstract3DSeries_IsMeshSmooth(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QAbstract3DSeries) IsVisible() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QAbstract3DSeries_IsVisible(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QAbstract3DSeries) ItemLabel() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QAbstract3DSeries_ItemLabel(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQAbstract3DSeries_ItemLabelChanged
 func callbackQAbstract3DSeries_ItemLabelChanged(ptr unsafe.Pointer, label C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "itemLabelChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(label))
+		(*(*func(string))(signal))(cGoUnpackString(label))
 	}
 
 }
@@ -8982,12 +6670,13 @@ func (ptr *QAbstract3DSeries) ConnectItemLabelChanged(f func(label string)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemLabelChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemLabelChanged", func(label string) {
-				signal.(func(string))(label)
+			f := func(label string) {
+				(*(*func(string))(signal))(label)
 				f(label)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemLabelChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemLabelChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemLabelChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9010,10 +6699,17 @@ func (ptr *QAbstract3DSeries) ItemLabelChanged(label string) {
 	}
 }
 
+func (ptr *QAbstract3DSeries) ItemLabelFormat() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QAbstract3DSeries_ItemLabelFormat(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQAbstract3DSeries_ItemLabelFormatChanged
 func callbackQAbstract3DSeries_ItemLabelFormatChanged(ptr unsafe.Pointer, format C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "itemLabelFormatChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(format))
+		(*(*func(string))(signal))(cGoUnpackString(format))
 	}
 
 }
@@ -9026,12 +6722,13 @@ func (ptr *QAbstract3DSeries) ConnectItemLabelFormatChanged(f func(format string
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemLabelFormatChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemLabelFormatChanged", func(format string) {
-				signal.(func(string))(format)
+			f := func(format string) {
+				(*(*func(string))(signal))(format)
 				f(format)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemLabelFormatChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemLabelFormatChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemLabelFormatChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9057,7 +6754,7 @@ func (ptr *QAbstract3DSeries) ItemLabelFormatChanged(format string) {
 //export callbackQAbstract3DSeries_ItemLabelVisibilityChanged
 func callbackQAbstract3DSeries_ItemLabelVisibilityChanged(ptr unsafe.Pointer, visible C.char) {
 	if signal := qt.GetSignal(ptr, "itemLabelVisibilityChanged"); signal != nil {
-		signal.(func(bool))(int8(visible) != 0)
+		(*(*func(bool))(signal))(int8(visible) != 0)
 	}
 
 }
@@ -9070,12 +6767,13 @@ func (ptr *QAbstract3DSeries) ConnectItemLabelVisibilityChanged(f func(visible b
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemLabelVisibilityChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemLabelVisibilityChanged", func(visible bool) {
-				signal.(func(bool))(visible)
+			f := func(visible bool) {
+				(*(*func(bool))(signal))(visible)
 				f(visible)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemLabelVisibilityChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemLabelVisibilityChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemLabelVisibilityChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9093,10 +6791,17 @@ func (ptr *QAbstract3DSeries) ItemLabelVisibilityChanged(visible bool) {
 	}
 }
 
+func (ptr *QAbstract3DSeries) Mesh() QAbstract3DSeries__Mesh {
+	if ptr.Pointer() != nil {
+		return QAbstract3DSeries__Mesh(C.QAbstract3DSeries_Mesh(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQAbstract3DSeries_MeshChanged
 func callbackQAbstract3DSeries_MeshChanged(ptr unsafe.Pointer, mesh C.longlong) {
 	if signal := qt.GetSignal(ptr, "meshChanged"); signal != nil {
-		signal.(func(QAbstract3DSeries__Mesh))(QAbstract3DSeries__Mesh(mesh))
+		(*(*func(QAbstract3DSeries__Mesh))(signal))(QAbstract3DSeries__Mesh(mesh))
 	}
 
 }
@@ -9109,12 +6814,13 @@ func (ptr *QAbstract3DSeries) ConnectMeshChanged(f func(mesh QAbstract3DSeries__
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "meshChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "meshChanged", func(mesh QAbstract3DSeries__Mesh) {
-				signal.(func(QAbstract3DSeries__Mesh))(mesh)
+			f := func(mesh QAbstract3DSeries__Mesh) {
+				(*(*func(QAbstract3DSeries__Mesh))(signal))(mesh)
 				f(mesh)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "meshChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "meshChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "meshChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9132,10 +6838,19 @@ func (ptr *QAbstract3DSeries) MeshChanged(mesh QAbstract3DSeries__Mesh) {
 	}
 }
 
+func (ptr *QAbstract3DSeries) MeshRotation() *gui.QQuaternion {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQQuaternionFromPointer(C.QAbstract3DSeries_MeshRotation(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QQuaternion).DestroyQQuaternion)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQAbstract3DSeries_MeshRotationChanged
 func callbackQAbstract3DSeries_MeshRotationChanged(ptr unsafe.Pointer, rotation unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "meshRotationChanged"); signal != nil {
-		signal.(func(*gui.QQuaternion))(gui.NewQQuaternionFromPointer(rotation))
+		(*(*func(*gui.QQuaternion))(signal))(gui.NewQQuaternionFromPointer(rotation))
 	}
 
 }
@@ -9148,12 +6863,13 @@ func (ptr *QAbstract3DSeries) ConnectMeshRotationChanged(f func(rotation *gui.QQ
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "meshRotationChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "meshRotationChanged", func(rotation *gui.QQuaternion) {
-				signal.(func(*gui.QQuaternion))(rotation)
+			f := func(rotation *gui.QQuaternion) {
+				(*(*func(*gui.QQuaternion))(signal))(rotation)
 				f(rotation)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "meshRotationChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "meshRotationChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "meshRotationChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9174,7 +6890,7 @@ func (ptr *QAbstract3DSeries) MeshRotationChanged(rotation gui.QQuaternion_ITF) 
 //export callbackQAbstract3DSeries_MeshSmoothChanged
 func callbackQAbstract3DSeries_MeshSmoothChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "meshSmoothChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -9187,12 +6903,13 @@ func (ptr *QAbstract3DSeries) ConnectMeshSmoothChanged(f func(enabled bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "meshSmoothChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "meshSmoothChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "meshSmoothChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "meshSmoothChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "meshSmoothChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9210,10 +6927,19 @@ func (ptr *QAbstract3DSeries) MeshSmoothChanged(enabled bool) {
 	}
 }
 
+func (ptr *QAbstract3DSeries) MultiHighlightColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.QAbstract3DSeries_MultiHighlightColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQAbstract3DSeries_MultiHighlightColorChanged
 func callbackQAbstract3DSeries_MultiHighlightColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "multiHighlightColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -9226,12 +6952,13 @@ func (ptr *QAbstract3DSeries) ConnectMultiHighlightColorChanged(f func(color *gu
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "multiHighlightColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "multiHighlightColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "multiHighlightColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "multiHighlightColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "multiHighlightColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9249,10 +6976,19 @@ func (ptr *QAbstract3DSeries) MultiHighlightColorChanged(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *QAbstract3DSeries) MultiHighlightGradient() *gui.QLinearGradient {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQLinearGradientFromPointer(C.QAbstract3DSeries_MultiHighlightGradient(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQAbstract3DSeries_MultiHighlightGradientChanged
 func callbackQAbstract3DSeries_MultiHighlightGradientChanged(ptr unsafe.Pointer, gradient unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "multiHighlightGradientChanged"); signal != nil {
-		signal.(func(*gui.QLinearGradient))(gui.NewQLinearGradientFromPointer(gradient))
+		(*(*func(*gui.QLinearGradient))(signal))(gui.NewQLinearGradientFromPointer(gradient))
 	}
 
 }
@@ -9265,12 +7001,13 @@ func (ptr *QAbstract3DSeries) ConnectMultiHighlightGradientChanged(f func(gradie
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "multiHighlightGradientChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "multiHighlightGradientChanged", func(gradient *gui.QLinearGradient) {
-				signal.(func(*gui.QLinearGradient))(gradient)
+			f := func(gradient *gui.QLinearGradient) {
+				(*(*func(*gui.QLinearGradient))(signal))(gradient)
 				f(gradient)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "multiHighlightGradientChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "multiHighlightGradientChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "multiHighlightGradientChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9288,10 +7025,17 @@ func (ptr *QAbstract3DSeries) MultiHighlightGradientChanged(gradient gui.QLinear
 	}
 }
 
+func (ptr *QAbstract3DSeries) Name() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QAbstract3DSeries_Name(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQAbstract3DSeries_NameChanged
 func callbackQAbstract3DSeries_NameChanged(ptr unsafe.Pointer, name C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "nameChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(name))
+		(*(*func(string))(signal))(cGoUnpackString(name))
 	}
 
 }
@@ -9304,12 +7048,13 @@ func (ptr *QAbstract3DSeries) ConnectNameChanged(f func(name string)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "nameChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "nameChanged", func(name string) {
-				signal.(func(string))(name)
+			f := func(name string) {
+				(*(*func(string))(signal))(name)
 				f(name)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "nameChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "nameChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "nameChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9443,10 +7188,19 @@ func (ptr *QAbstract3DSeries) SetVisible(visible bool) {
 	}
 }
 
+func (ptr *QAbstract3DSeries) SingleHighlightColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.QAbstract3DSeries_SingleHighlightColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQAbstract3DSeries_SingleHighlightColorChanged
 func callbackQAbstract3DSeries_SingleHighlightColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "singleHighlightColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -9459,12 +7213,13 @@ func (ptr *QAbstract3DSeries) ConnectSingleHighlightColorChanged(f func(color *g
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "singleHighlightColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "singleHighlightColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "singleHighlightColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "singleHighlightColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "singleHighlightColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9482,10 +7237,19 @@ func (ptr *QAbstract3DSeries) SingleHighlightColorChanged(color gui.QColor_ITF) 
 	}
 }
 
+func (ptr *QAbstract3DSeries) SingleHighlightGradient() *gui.QLinearGradient {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQLinearGradientFromPointer(C.QAbstract3DSeries_SingleHighlightGradient(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQAbstract3DSeries_SingleHighlightGradientChanged
 func callbackQAbstract3DSeries_SingleHighlightGradientChanged(ptr unsafe.Pointer, gradient unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "singleHighlightGradientChanged"); signal != nil {
-		signal.(func(*gui.QLinearGradient))(gui.NewQLinearGradientFromPointer(gradient))
+		(*(*func(*gui.QLinearGradient))(signal))(gui.NewQLinearGradientFromPointer(gradient))
 	}
 
 }
@@ -9498,12 +7262,13 @@ func (ptr *QAbstract3DSeries) ConnectSingleHighlightGradientChanged(f func(gradi
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "singleHighlightGradientChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "singleHighlightGradientChanged", func(gradient *gui.QLinearGradient) {
-				signal.(func(*gui.QLinearGradient))(gradient)
+			f := func(gradient *gui.QLinearGradient) {
+				(*(*func(*gui.QLinearGradient))(signal))(gradient)
 				f(gradient)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "singleHighlightGradientChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "singleHighlightGradientChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "singleHighlightGradientChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9521,10 +7286,24 @@ func (ptr *QAbstract3DSeries) SingleHighlightGradientChanged(gradient gui.QLinea
 	}
 }
 
+func (ptr *QAbstract3DSeries) Type() QAbstract3DSeries__SeriesType {
+	if ptr.Pointer() != nil {
+		return QAbstract3DSeries__SeriesType(C.QAbstract3DSeries_Type(ptr.Pointer()))
+	}
+	return 0
+}
+
+func (ptr *QAbstract3DSeries) UserDefinedMesh() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QAbstract3DSeries_UserDefinedMesh(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQAbstract3DSeries_UserDefinedMeshChanged
 func callbackQAbstract3DSeries_UserDefinedMeshChanged(ptr unsafe.Pointer, fileName C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "userDefinedMeshChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(fileName))
+		(*(*func(string))(signal))(cGoUnpackString(fileName))
 	}
 
 }
@@ -9537,12 +7316,13 @@ func (ptr *QAbstract3DSeries) ConnectUserDefinedMeshChanged(f func(fileName stri
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "userDefinedMeshChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "userDefinedMeshChanged", func(fileName string) {
-				signal.(func(string))(fileName)
+			f := func(fileName string) {
+				(*(*func(string))(signal))(fileName)
 				f(fileName)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "userDefinedMeshChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "userDefinedMeshChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "userDefinedMeshChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9568,7 +7348,7 @@ func (ptr *QAbstract3DSeries) UserDefinedMeshChanged(fileName string) {
 //export callbackQAbstract3DSeries_VisibilityChanged
 func callbackQAbstract3DSeries_VisibilityChanged(ptr unsafe.Pointer, visible C.char) {
 	if signal := qt.GetSignal(ptr, "visibilityChanged"); signal != nil {
-		signal.(func(bool))(int8(visible) != 0)
+		(*(*func(bool))(signal))(int8(visible) != 0)
 	}
 
 }
@@ -9581,12 +7361,13 @@ func (ptr *QAbstract3DSeries) ConnectVisibilityChanged(f func(visible bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "visibilityChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "visibilityChanged", func(visible bool) {
-				signal.(func(bool))(visible)
+			f := func(visible bool) {
+				(*(*func(bool))(signal))(visible)
 				f(visible)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "visibilityChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "visibilityChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "visibilityChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9607,7 +7388,7 @@ func (ptr *QAbstract3DSeries) VisibilityChanged(visible bool) {
 //export callbackQAbstract3DSeries_DestroyQAbstract3DSeries
 func callbackQAbstract3DSeries_DestroyQAbstract3DSeries(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QAbstract3DSeries"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQAbstract3DSeriesFromPointer(ptr).DestroyQAbstract3DSeriesDefault()
 	}
@@ -9617,12 +7398,13 @@ func (ptr *QAbstract3DSeries) ConnectDestroyQAbstract3DSeries(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QAbstract3DSeries"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DSeries", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DSeries", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DSeries", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QAbstract3DSeries", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9648,183 +7430,6 @@ func (ptr *QAbstract3DSeries) DestroyQAbstract3DSeriesDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QAbstract3DSeries) ColorStyle() Q3DTheme__ColorStyle {
-	if ptr.Pointer() != nil {
-		return Q3DTheme__ColorStyle(C.QAbstract3DSeries_ColorStyle(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DSeries) Mesh() QAbstract3DSeries__Mesh {
-	if ptr.Pointer() != nil {
-		return QAbstract3DSeries__Mesh(C.QAbstract3DSeries_Mesh(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DSeries) Type() QAbstract3DSeries__SeriesType {
-	if ptr.Pointer() != nil {
-		return QAbstract3DSeries__SeriesType(C.QAbstract3DSeries_Type(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QAbstract3DSeries) BaseColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.QAbstract3DSeries_BaseColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DSeries) MultiHighlightColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.QAbstract3DSeries_MultiHighlightColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DSeries) SingleHighlightColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.QAbstract3DSeries_SingleHighlightColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DSeries) BaseGradient() *gui.QLinearGradient {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQLinearGradientFromPointer(C.QAbstract3DSeries_BaseGradient(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DSeries) MultiHighlightGradient() *gui.QLinearGradient {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQLinearGradientFromPointer(C.QAbstract3DSeries_MultiHighlightGradient(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DSeries) SingleHighlightGradient() *gui.QLinearGradient {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQLinearGradientFromPointer(C.QAbstract3DSeries_SingleHighlightGradient(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QLinearGradient).DestroyQLinearGradient)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DSeries) MeshRotation() *gui.QQuaternion {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQQuaternionFromPointer(C.QAbstract3DSeries_MeshRotation(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QQuaternion).DestroyQQuaternion)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DSeries) ItemLabel() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QAbstract3DSeries_ItemLabel(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QAbstract3DSeries) ItemLabelFormat() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QAbstract3DSeries_ItemLabelFormat(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QAbstract3DSeries) Name() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QAbstract3DSeries_Name(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QAbstract3DSeries) UserDefinedMesh() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QAbstract3DSeries_UserDefinedMesh(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QAbstract3DSeries) IsItemLabelVisible() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DSeries_IsItemLabelVisible(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QAbstract3DSeries) IsMeshSmooth() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DSeries_IsMeshSmooth(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QAbstract3DSeries) IsVisible() bool {
-	if ptr.Pointer() != nil {
-		return C.QAbstract3DSeries_IsVisible(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQAbstract3DSeries_MetaObject
-func callbackQAbstract3DSeries_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQAbstract3DSeriesFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QAbstract3DSeries) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QAbstract3DSeries) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QAbstract3DSeries) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstract3DSeries_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstract3DSeries) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstract3DSeries_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QAbstractDataProxy struct {
@@ -9876,66 +7481,17 @@ const (
 	QAbstractDataProxy__DataTypeSurface QAbstractDataProxy__DataType = QAbstractDataProxy__DataType(4)
 )
 
-func QAbstractDataProxy_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QAbstractDataProxy) Type() QAbstractDataProxy__DataType {
+	if ptr.Pointer() != nil {
+		return QAbstractDataProxy__DataType(C.QAbstractDataProxy_Type(ptr.Pointer()))
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstractDataProxy_QAbstractDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstractDataProxy) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstractDataProxy_QAbstractDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QAbstractDataProxy_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstractDataProxy_QAbstractDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QAbstractDataProxy) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QAbstractDataProxy_QAbstractDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
+	return 0
 }
 
 //export callbackQAbstractDataProxy_DestroyQAbstractDataProxy
 func callbackQAbstractDataProxy_DestroyQAbstractDataProxy(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QAbstractDataProxy"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQAbstractDataProxyFromPointer(ptr).DestroyQAbstractDataProxyDefault()
 	}
@@ -9945,12 +7501,13 @@ func (ptr *QAbstractDataProxy) ConnectDestroyQAbstractDataProxy(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QAbstractDataProxy"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstractDataProxy", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QAbstractDataProxy", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QAbstractDataProxy", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QAbstractDataProxy", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -9966,7 +7523,6 @@ func (ptr *QAbstractDataProxy) DestroyQAbstractDataProxy() {
 	if ptr.Pointer() != nil {
 		C.QAbstractDataProxy_DestroyQAbstractDataProxy(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -9974,59 +7530,7 @@ func (ptr *QAbstractDataProxy) DestroyQAbstractDataProxyDefault() {
 	if ptr.Pointer() != nil {
 		C.QAbstractDataProxy_DestroyQAbstractDataProxyDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QAbstractDataProxy) Type() QAbstractDataProxy__DataType {
-	if ptr.Pointer() != nil {
-		return QAbstractDataProxy__DataType(C.QAbstractDataProxy_Type(ptr.Pointer()))
-	}
-	return 0
-}
-
-//export callbackQAbstractDataProxy_MetaObject
-func callbackQAbstractDataProxy_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQAbstractDataProxyFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QAbstractDataProxy) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QAbstractDataProxy) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QAbstractDataProxy) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstractDataProxy_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QAbstractDataProxy) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QAbstractDataProxy_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QBar3DSeries struct {
@@ -10066,86 +7570,25 @@ func NewQBar3DSeriesFromPointer(ptr unsafe.Pointer) (n *QBar3DSeries) {
 	n.SetPointer(ptr)
 	return
 }
-func NewQBar3DSeries2(dataProxy QBarDataProxy_ITF, parent core.QObject_ITF) *QBar3DSeries {
-	return NewQBar3DSeriesFromPointer(C.QBar3DSeries_NewQBar3DSeries2(PointerFromQBarDataProxy(dataProxy), core.PointerFromQObject(parent)))
-}
-
 func NewQBar3DSeries(parent core.QObject_ITF) *QBar3DSeries {
 	return NewQBar3DSeriesFromPointer(C.QBar3DSeries_NewQBar3DSeries(core.PointerFromQObject(parent)))
 }
 
-func QBar3DSeries_InvalidSelectionPosition() *core.QPoint {
-	tmpValue := core.NewQPointFromPointer(C.QBar3DSeries_QBar3DSeries_InvalidSelectionPosition())
-	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-	return tmpValue
+func NewQBar3DSeries2(dataProxy QBarDataProxy_ITF, parent core.QObject_ITF) *QBar3DSeries {
+	return NewQBar3DSeriesFromPointer(C.QBar3DSeries_NewQBar3DSeries2(PointerFromQBarDataProxy(dataProxy), core.PointerFromQObject(parent)))
 }
 
-func (ptr *QBar3DSeries) InvalidSelectionPosition() *core.QPoint {
-	tmpValue := core.NewQPointFromPointer(C.QBar3DSeries_QBar3DSeries_InvalidSelectionPosition())
-	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-	return tmpValue
-}
-
-func QBar3DSeries_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QBar3DSeries) DataProxy() *QBarDataProxy {
+	if ptr.Pointer() != nil {
+		return NewQBarDataProxyFromPointer(C.QBar3DSeries_DataProxy(ptr.Pointer()))
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QBar3DSeries_QBar3DSeries_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QBar3DSeries) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QBar3DSeries_QBar3DSeries_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QBar3DSeries_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QBar3DSeries_QBar3DSeries_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QBar3DSeries) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QBar3DSeries_QBar3DSeries_TrUtf8(sC, cC, C.int(int32(n))))
+	return nil
 }
 
 //export callbackQBar3DSeries_DataProxyChanged
 func callbackQBar3DSeries_DataProxyChanged(ptr unsafe.Pointer, proxy unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "dataProxyChanged"); signal != nil {
-		signal.(func(*QBarDataProxy))(NewQBarDataProxyFromPointer(proxy))
+		(*(*func(*QBarDataProxy))(signal))(NewQBarDataProxyFromPointer(proxy))
 	}
 
 }
@@ -10158,12 +7601,13 @@ func (ptr *QBar3DSeries) ConnectDataProxyChanged(f func(proxy *QBarDataProxy)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "dataProxyChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", func(proxy *QBarDataProxy) {
-				signal.(func(*QBarDataProxy))(proxy)
+			f := func(proxy *QBarDataProxy) {
+				(*(*func(*QBarDataProxy))(signal))(proxy)
 				f(proxy)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10181,10 +7625,29 @@ func (ptr *QBar3DSeries) DataProxyChanged(proxy QBarDataProxy_ITF) {
 	}
 }
 
+func QBar3DSeries_InvalidSelectionPosition() *core.QPoint {
+	tmpValue := core.NewQPointFromPointer(C.QBar3DSeries_QBar3DSeries_InvalidSelectionPosition())
+	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+	return tmpValue
+}
+
+func (ptr *QBar3DSeries) InvalidSelectionPosition() *core.QPoint {
+	tmpValue := core.NewQPointFromPointer(C.QBar3DSeries_QBar3DSeries_InvalidSelectionPosition())
+	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+	return tmpValue
+}
+
+func (ptr *QBar3DSeries) MeshAngle() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QBar3DSeries_MeshAngle(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQBar3DSeries_MeshAngleChanged
 func callbackQBar3DSeries_MeshAngleChanged(ptr unsafe.Pointer, angle C.float) {
 	if signal := qt.GetSignal(ptr, "meshAngleChanged"); signal != nil {
-		signal.(func(float32))(float32(angle))
+		(*(*func(float32))(signal))(float32(angle))
 	}
 
 }
@@ -10197,12 +7660,13 @@ func (ptr *QBar3DSeries) ConnectMeshAngleChanged(f func(angle float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "meshAngleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "meshAngleChanged", func(angle float32) {
-				signal.(func(float32))(angle)
+			f := func(angle float32) {
+				(*(*func(float32))(signal))(angle)
 				f(angle)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "meshAngleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "meshAngleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "meshAngleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10220,10 +7684,19 @@ func (ptr *QBar3DSeries) MeshAngleChanged(angle float32) {
 	}
 }
 
+func (ptr *QBar3DSeries) SelectedBar() *core.QPoint {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQPointFromPointer(C.QBar3DSeries_SelectedBar(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQBar3DSeries_SelectedBarChanged
 func callbackQBar3DSeries_SelectedBarChanged(ptr unsafe.Pointer, position unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "selectedBarChanged"); signal != nil {
-		signal.(func(*core.QPoint))(core.NewQPointFromPointer(position))
+		(*(*func(*core.QPoint))(signal))(core.NewQPointFromPointer(position))
 	}
 
 }
@@ -10236,12 +7709,13 @@ func (ptr *QBar3DSeries) ConnectSelectedBarChanged(f func(position *core.QPoint)
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "selectedBarChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectedBarChanged", func(position *core.QPoint) {
-				signal.(func(*core.QPoint))(position)
+			f := func(position *core.QPoint) {
+				(*(*func(*core.QPoint))(signal))(position)
 				f(position)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "selectedBarChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectedBarChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "selectedBarChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10280,7 +7754,7 @@ func (ptr *QBar3DSeries) SetSelectedBar(position core.QPoint_ITF) {
 //export callbackQBar3DSeries_DestroyQBar3DSeries
 func callbackQBar3DSeries_DestroyQBar3DSeries(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QBar3DSeries"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQBar3DSeriesFromPointer(ptr).DestroyQBar3DSeriesDefault()
 	}
@@ -10290,12 +7764,13 @@ func (ptr *QBar3DSeries) ConnectDestroyQBar3DSeries(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QBar3DSeries"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QBar3DSeries", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QBar3DSeries", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QBar3DSeries", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QBar3DSeries", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10321,73 +7796,6 @@ func (ptr *QBar3DSeries) DestroyQBar3DSeriesDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QBar3DSeries) DataProxy() *QBarDataProxy {
-	if ptr.Pointer() != nil {
-		return NewQBarDataProxyFromPointer(C.QBar3DSeries_DataProxy(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QBar3DSeries) SelectedBar() *core.QPoint {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQPointFromPointer(C.QBar3DSeries_SelectedBar(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-		return tmpValue
-	}
-	return nil
-}
-
-//export callbackQBar3DSeries_MetaObject
-func callbackQBar3DSeries_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQBar3DSeriesFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QBar3DSeries) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QBar3DSeries) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QBar3DSeries) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QBar3DSeries_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QBar3DSeries) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QBar3DSeries_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QBar3DSeries) MeshAngle() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QBar3DSeries_MeshAngle(ptr.Pointer()))
-	}
-	return 0
 }
 
 type QBarDataItem struct {
@@ -10433,12 +7841,6 @@ func NewQBarDataItem() *QBarDataItem {
 	return tmpValue
 }
 
-func NewQBarDataItem4(other QBarDataItem_ITF) *QBarDataItem {
-	tmpValue := NewQBarDataItemFromPointer(C.QBarDataItem_NewQBarDataItem4(PointerFromQBarDataItem(other)))
-	runtime.SetFinalizer(tmpValue, (*QBarDataItem).DestroyQBarDataItem)
-	return tmpValue
-}
-
 func NewQBarDataItem2(value float32) *QBarDataItem {
 	tmpValue := NewQBarDataItemFromPointer(C.QBarDataItem_NewQBarDataItem2(C.float(value)))
 	runtime.SetFinalizer(tmpValue, (*QBarDataItem).DestroyQBarDataItem)
@@ -10449,6 +7851,19 @@ func NewQBarDataItem3(value float32, angle float32) *QBarDataItem {
 	tmpValue := NewQBarDataItemFromPointer(C.QBarDataItem_NewQBarDataItem3(C.float(value), C.float(angle)))
 	runtime.SetFinalizer(tmpValue, (*QBarDataItem).DestroyQBarDataItem)
 	return tmpValue
+}
+
+func NewQBarDataItem4(other QBarDataItem_ITF) *QBarDataItem {
+	tmpValue := NewQBarDataItemFromPointer(C.QBarDataItem_NewQBarDataItem4(PointerFromQBarDataItem(other)))
+	runtime.SetFinalizer(tmpValue, (*QBarDataItem).DestroyQBarDataItem)
+	return tmpValue
+}
+
+func (ptr *QBarDataItem) Rotation() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QBarDataItem_Rotation(ptr.Pointer()))
+	}
+	return 0
 }
 
 func (ptr *QBarDataItem) SetRotation(angle float32) {
@@ -10463,26 +7878,19 @@ func (ptr *QBarDataItem) SetValue(val float32) {
 	}
 }
 
+func (ptr *QBarDataItem) Value() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QBarDataItem_Value(ptr.Pointer()))
+	}
+	return 0
+}
+
 func (ptr *QBarDataItem) DestroyQBarDataItem() {
 	if ptr.Pointer() != nil {
 		C.QBarDataItem_DestroyQBarDataItem(ptr.Pointer())
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QBarDataItem) Rotation() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QBarDataItem_Rotation(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QBarDataItem) Value() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QBarDataItem_Value(ptr.Pointer()))
-	}
-	return 0
 }
 
 type QBarDataProxy struct {
@@ -10526,66 +7934,10 @@ func NewQBarDataProxy(parent core.QObject_ITF) *QBarDataProxy {
 	return NewQBarDataProxyFromPointer(C.QBarDataProxy_NewQBarDataProxy(core.PointerFromQObject(parent)))
 }
 
-func QBarDataProxy_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QBarDataProxy_QBarDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QBarDataProxy) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QBarDataProxy_QBarDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QBarDataProxy_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QBarDataProxy_QBarDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QBarDataProxy) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QBarDataProxy_QBarDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 //export callbackQBarDataProxy_ArrayReset
 func callbackQBarDataProxy_ArrayReset(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "arrayReset"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -10598,12 +7950,13 @@ func (ptr *QBarDataProxy) ConnectArrayReset(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "arrayReset"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "arrayReset", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "arrayReset", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "arrayReset", f)
+			qt.ConnectSignal(ptr.Pointer(), "arrayReset", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10621,10 +7974,17 @@ func (ptr *QBarDataProxy) ArrayReset() {
 	}
 }
 
+func (ptr *QBarDataProxy) ColumnLabels() []string {
+	if ptr.Pointer() != nil {
+		return unpackStringList(cGoUnpackString(C.QBarDataProxy_ColumnLabels(ptr.Pointer())))
+	}
+	return make([]string, 0)
+}
+
 //export callbackQBarDataProxy_ColumnLabelsChanged
 func callbackQBarDataProxy_ColumnLabelsChanged(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "columnLabelsChanged"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -10637,12 +7997,13 @@ func (ptr *QBarDataProxy) ConnectColumnLabelsChanged(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnLabelsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnLabelsChanged", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnLabelsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnLabelsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnLabelsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10660,10 +8021,24 @@ func (ptr *QBarDataProxy) ColumnLabelsChanged() {
 	}
 }
 
+func (ptr *QBarDataProxy) ItemAt(rowIndex int, columnIndex int) *QBarDataItem {
+	if ptr.Pointer() != nil {
+		return NewQBarDataItemFromPointer(C.QBarDataProxy_ItemAt(ptr.Pointer(), C.int(int32(rowIndex)), C.int(int32(columnIndex))))
+	}
+	return nil
+}
+
+func (ptr *QBarDataProxy) ItemAt2(position core.QPoint_ITF) *QBarDataItem {
+	if ptr.Pointer() != nil {
+		return NewQBarDataItemFromPointer(C.QBarDataProxy_ItemAt2(ptr.Pointer(), core.PointerFromQPoint(position)))
+	}
+	return nil
+}
+
 //export callbackQBarDataProxy_ItemChanged
 func callbackQBarDataProxy_ItemChanged(ptr unsafe.Pointer, rowIndex C.int, columnIndex C.int) {
 	if signal := qt.GetSignal(ptr, "itemChanged"); signal != nil {
-		signal.(func(int, int))(int(int32(rowIndex)), int(int32(columnIndex)))
+		(*(*func(int, int))(signal))(int(int32(rowIndex)), int(int32(columnIndex)))
 	}
 
 }
@@ -10676,12 +8051,13 @@ func (ptr *QBarDataProxy) ConnectItemChanged(f func(rowIndex int, columnIndex in
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemChanged", func(rowIndex int, columnIndex int) {
-				signal.(func(int, int))(rowIndex, columnIndex)
+			f := func(rowIndex int, columnIndex int) {
+				(*(*func(int, int))(signal))(rowIndex, columnIndex)
 				f(rowIndex, columnIndex)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10711,10 +8087,17 @@ func (ptr *QBarDataProxy) ResetArray() {
 	}
 }
 
+func (ptr *QBarDataProxy) RowCount() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QBarDataProxy_RowCount(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQBarDataProxy_RowCountChanged
 func callbackQBarDataProxy_RowCountChanged(ptr unsafe.Pointer, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowCountChanged"); signal != nil {
-		signal.(func(int))(int(int32(count)))
+		(*(*func(int))(signal))(int(int32(count)))
 	}
 
 }
@@ -10727,12 +8110,13 @@ func (ptr *QBarDataProxy) ConnectRowCountChanged(f func(count int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowCountChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowCountChanged", func(count int) {
-				signal.(func(int))(count)
+			f := func(count int) {
+				(*(*func(int))(signal))(count)
 				f(count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowCountChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowCountChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowCountChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10750,10 +8134,17 @@ func (ptr *QBarDataProxy) RowCountChanged(count int) {
 	}
 }
 
+func (ptr *QBarDataProxy) RowLabels() []string {
+	if ptr.Pointer() != nil {
+		return unpackStringList(cGoUnpackString(C.QBarDataProxy_RowLabels(ptr.Pointer())))
+	}
+	return make([]string, 0)
+}
+
 //export callbackQBarDataProxy_RowLabelsChanged
 func callbackQBarDataProxy_RowLabelsChanged(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "rowLabelsChanged"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -10766,12 +8157,13 @@ func (ptr *QBarDataProxy) ConnectRowLabelsChanged(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowLabelsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowLabelsChanged", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowLabelsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowLabelsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowLabelsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10792,7 +8184,7 @@ func (ptr *QBarDataProxy) RowLabelsChanged() {
 //export callbackQBarDataProxy_RowsAdded
 func callbackQBarDataProxy_RowsAdded(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowsAdded"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -10805,12 +8197,13 @@ func (ptr *QBarDataProxy) ConnectRowsAdded(f func(startIndex int, count int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowsAdded"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowsAdded", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowsAdded", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowsAdded", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowsAdded", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10831,7 +8224,7 @@ func (ptr *QBarDataProxy) RowsAdded(startIndex int, count int) {
 //export callbackQBarDataProxy_RowsChanged
 func callbackQBarDataProxy_RowsChanged(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowsChanged"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -10844,12 +8237,13 @@ func (ptr *QBarDataProxy) ConnectRowsChanged(f func(startIndex int, count int)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowsChanged", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10870,7 +8264,7 @@ func (ptr *QBarDataProxy) RowsChanged(startIndex int, count int) {
 //export callbackQBarDataProxy_RowsInserted
 func callbackQBarDataProxy_RowsInserted(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowsInserted"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -10883,12 +8277,13 @@ func (ptr *QBarDataProxy) ConnectRowsInserted(f func(startIndex int, count int))
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowsInserted"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowsInserted", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowsInserted", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowsInserted", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowsInserted", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10909,7 +8304,7 @@ func (ptr *QBarDataProxy) RowsInserted(startIndex int, count int) {
 //export callbackQBarDataProxy_RowsRemoved
 func callbackQBarDataProxy_RowsRemoved(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowsRemoved"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -10922,12 +8317,13 @@ func (ptr *QBarDataProxy) ConnectRowsRemoved(f func(startIndex int, count int)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowsRemoved"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowsRemoved", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowsRemoved", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowsRemoved", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowsRemoved", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10945,10 +8341,17 @@ func (ptr *QBarDataProxy) RowsRemoved(startIndex int, count int) {
 	}
 }
 
+func (ptr *QBarDataProxy) Series() *QBar3DSeries {
+	if ptr.Pointer() != nil {
+		return NewQBar3DSeriesFromPointer(C.QBarDataProxy_Series(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQBarDataProxy_SeriesChanged
 func callbackQBarDataProxy_SeriesChanged(ptr unsafe.Pointer, series unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "seriesChanged"); signal != nil {
-		signal.(func(*QBar3DSeries))(NewQBar3DSeriesFromPointer(series))
+		(*(*func(*QBar3DSeries))(signal))(NewQBar3DSeriesFromPointer(series))
 	}
 
 }
@@ -10961,12 +8364,13 @@ func (ptr *QBarDataProxy) ConnectSeriesChanged(f func(series *QBar3DSeries)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "seriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", func(series *QBar3DSeries) {
-				signal.(func(*QBar3DSeries))(series)
+			f := func(series *QBar3DSeries) {
+				(*(*func(*QBar3DSeries))(signal))(series)
 				f(series)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -10986,15 +8390,9 @@ func (ptr *QBarDataProxy) SeriesChanged(series QBar3DSeries_ITF) {
 
 func (ptr *QBarDataProxy) SetColumnLabels(labels []string) {
 	if ptr.Pointer() != nil {
-		labelsC := C.CString(strings.Join(labels, "|"))
+		labelsC := C.CString(strings.Join(labels, "¡¦!"))
 		defer C.free(unsafe.Pointer(labelsC))
-		C.QBarDataProxy_SetColumnLabels(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: labelsC, len: C.longlong(len(strings.Join(labels, "|")))})
-	}
-}
-
-func (ptr *QBarDataProxy) SetItem2(position core.QPoint_ITF, item QBarDataItem_ITF) {
-	if ptr.Pointer() != nil {
-		C.QBarDataProxy_SetItem2(ptr.Pointer(), core.PointerFromQPoint(position), PointerFromQBarDataItem(item))
+		C.QBarDataProxy_SetColumnLabels(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: labelsC, len: C.longlong(len(strings.Join(labels, "¡¦!")))})
 	}
 }
 
@@ -11004,18 +8402,24 @@ func (ptr *QBarDataProxy) SetItem(rowIndex int, columnIndex int, item QBarDataIt
 	}
 }
 
+func (ptr *QBarDataProxy) SetItem2(position core.QPoint_ITF, item QBarDataItem_ITF) {
+	if ptr.Pointer() != nil {
+		C.QBarDataProxy_SetItem2(ptr.Pointer(), core.PointerFromQPoint(position), PointerFromQBarDataItem(item))
+	}
+}
+
 func (ptr *QBarDataProxy) SetRowLabels(labels []string) {
 	if ptr.Pointer() != nil {
-		labelsC := C.CString(strings.Join(labels, "|"))
+		labelsC := C.CString(strings.Join(labels, "¡¦!"))
 		defer C.free(unsafe.Pointer(labelsC))
-		C.QBarDataProxy_SetRowLabels(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: labelsC, len: C.longlong(len(strings.Join(labels, "|")))})
+		C.QBarDataProxy_SetRowLabels(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: labelsC, len: C.longlong(len(strings.Join(labels, "¡¦!")))})
 	}
 }
 
 //export callbackQBarDataProxy_DestroyQBarDataProxy
 func callbackQBarDataProxy_DestroyQBarDataProxy(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QBarDataProxy"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQBarDataProxyFromPointer(ptr).DestroyQBarDataProxyDefault()
 	}
@@ -11025,12 +8429,13 @@ func (ptr *QBarDataProxy) ConnectDestroyQBarDataProxy(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QBarDataProxy"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QBarDataProxy", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QBarDataProxy", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QBarDataProxy", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QBarDataProxy", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11046,7 +8451,6 @@ func (ptr *QBarDataProxy) DestroyQBarDataProxy() {
 	if ptr.Pointer() != nil {
 		C.QBarDataProxy_DestroyQBarDataProxy(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -11054,94 +8458,7 @@ func (ptr *QBarDataProxy) DestroyQBarDataProxyDefault() {
 	if ptr.Pointer() != nil {
 		C.QBarDataProxy_DestroyQBarDataProxyDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QBarDataProxy) Series() *QBar3DSeries {
-	if ptr.Pointer() != nil {
-		return NewQBar3DSeriesFromPointer(C.QBarDataProxy_Series(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QBarDataProxy) ColumnLabels() []string {
-	if ptr.Pointer() != nil {
-		return strings.Split(cGoUnpackString(C.QBarDataProxy_ColumnLabels(ptr.Pointer())), "|")
-	}
-	return make([]string, 0)
-}
-
-func (ptr *QBarDataProxy) RowLabels() []string {
-	if ptr.Pointer() != nil {
-		return strings.Split(cGoUnpackString(C.QBarDataProxy_RowLabels(ptr.Pointer())), "|")
-	}
-	return make([]string, 0)
-}
-
-func (ptr *QBarDataProxy) ItemAt2(position core.QPoint_ITF) *QBarDataItem {
-	if ptr.Pointer() != nil {
-		return NewQBarDataItemFromPointer(C.QBarDataProxy_ItemAt2(ptr.Pointer(), core.PointerFromQPoint(position)))
-	}
-	return nil
-}
-
-func (ptr *QBarDataProxy) ItemAt(rowIndex int, columnIndex int) *QBarDataItem {
-	if ptr.Pointer() != nil {
-		return NewQBarDataItemFromPointer(C.QBarDataProxy_ItemAt(ptr.Pointer(), C.int(int32(rowIndex)), C.int(int32(columnIndex))))
-	}
-	return nil
-}
-
-//export callbackQBarDataProxy_MetaObject
-func callbackQBarDataProxy_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQBarDataProxyFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QBarDataProxy) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QBarDataProxy) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QBarDataProxy) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QBarDataProxy_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QBarDataProxy) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QBarDataProxy_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QBarDataProxy) RowCount() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QBarDataProxy_RowCount(ptr.Pointer())))
-	}
-	return 0
 }
 
 type QCategory3DAxis struct {
@@ -11185,66 +8502,17 @@ func NewQCategory3DAxis(parent core.QObject_ITF) *QCategory3DAxis {
 	return NewQCategory3DAxisFromPointer(C.QCategory3DAxis_NewQCategory3DAxis(core.PointerFromQObject(parent)))
 }
 
-func QCategory3DAxis_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QCategory3DAxis) Labels() []string {
+	if ptr.Pointer() != nil {
+		return unpackStringList(cGoUnpackString(C.QCategory3DAxis_Labels(ptr.Pointer())))
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCategory3DAxis_QCategory3DAxis_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QCategory3DAxis) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCategory3DAxis_QCategory3DAxis_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QCategory3DAxis_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCategory3DAxis_QCategory3DAxis_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QCategory3DAxis) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCategory3DAxis_QCategory3DAxis_TrUtf8(sC, cC, C.int(int32(n))))
+	return make([]string, 0)
 }
 
 //export callbackQCategory3DAxis_LabelsChanged
 func callbackQCategory3DAxis_LabelsChanged(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "labelsChanged"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -11257,12 +8525,13 @@ func (ptr *QCategory3DAxis) ConnectLabelsChanged(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "labelsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "labelsChanged", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "labelsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "labelsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "labelsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11282,16 +8551,16 @@ func (ptr *QCategory3DAxis) LabelsChanged() {
 
 func (ptr *QCategory3DAxis) SetLabels(labels []string) {
 	if ptr.Pointer() != nil {
-		labelsC := C.CString(strings.Join(labels, "|"))
+		labelsC := C.CString(strings.Join(labels, "¡¦!"))
 		defer C.free(unsafe.Pointer(labelsC))
-		C.QCategory3DAxis_SetLabels(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: labelsC, len: C.longlong(len(strings.Join(labels, "|")))})
+		C.QCategory3DAxis_SetLabels(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: labelsC, len: C.longlong(len(strings.Join(labels, "¡¦!")))})
 	}
 }
 
 //export callbackQCategory3DAxis_DestroyQCategory3DAxis
 func callbackQCategory3DAxis_DestroyQCategory3DAxis(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QCategory3DAxis"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQCategory3DAxisFromPointer(ptr).DestroyQCategory3DAxisDefault()
 	}
@@ -11301,12 +8570,13 @@ func (ptr *QCategory3DAxis) ConnectDestroyQCategory3DAxis(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QCategory3DAxis"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QCategory3DAxis", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QCategory3DAxis", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QCategory3DAxis", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QCategory3DAxis", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11322,7 +8592,6 @@ func (ptr *QCategory3DAxis) DestroyQCategory3DAxis() {
 	if ptr.Pointer() != nil {
 		C.QCategory3DAxis_DestroyQCategory3DAxis(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -11330,59 +8599,7 @@ func (ptr *QCategory3DAxis) DestroyQCategory3DAxisDefault() {
 	if ptr.Pointer() != nil {
 		C.QCategory3DAxis_DestroyQCategory3DAxisDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QCategory3DAxis) Labels() []string {
-	if ptr.Pointer() != nil {
-		return strings.Split(cGoUnpackString(C.QCategory3DAxis_Labels(ptr.Pointer())), "|")
-	}
-	return make([]string, 0)
-}
-
-//export callbackQCategory3DAxis_MetaObject
-func callbackQCategory3DAxis_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQCategory3DAxisFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QCategory3DAxis) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QCategory3DAxis) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QCategory3DAxis) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QCategory3DAxis_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QCategory3DAxis) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QCategory3DAxis_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QCustom3DItem struct {
@@ -11435,75 +8652,45 @@ func NewQCustom3DItem2(meshFile string, position gui.QVector3D_ITF, scaling gui.
 	return NewQCustom3DItemFromPointer(C.QCustom3DItem_NewQCustom3DItem2(C.struct_QtDataVisualization_PackedString{data: meshFileC, len: C.longlong(len(meshFile))}, gui.PointerFromQVector3D(position), gui.PointerFromQVector3D(scaling), gui.PointerFromQQuaternion(rotation), gui.PointerFromQImage(texture), core.PointerFromQObject(parent)))
 }
 
-func (ptr *QCustom3DItem) Rotation() *gui.QQuaternion {
+func (ptr *QCustom3DItem) IsPositionAbsolute() bool {
 	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQQuaternionFromPointer(C.QCustom3DItem_Rotation(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QQuaternion).DestroyQQuaternion)
-		return tmpValue
+		return int8(C.QCustom3DItem_IsPositionAbsolute(ptr.Pointer())) != 0
 	}
-	return nil
+	return false
 }
 
-func QCustom3DItem_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QCustom3DItem) IsScalingAbsolute() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DItem_IsScalingAbsolute(ptr.Pointer())) != 0
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DItem_QCustom3DItem_Tr(sC, cC, C.int(int32(n))))
+	return false
 }
 
-func (ptr *QCustom3DItem) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QCustom3DItem) IsShadowCasting() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DItem_IsShadowCasting(ptr.Pointer())) != 0
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DItem_QCustom3DItem_Tr(sC, cC, C.int(int32(n))))
+	return false
 }
 
-func QCustom3DItem_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QCustom3DItem) IsVisible() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DItem_IsVisible(ptr.Pointer())) != 0
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DItem_QCustom3DItem_TrUtf8(sC, cC, C.int(int32(n))))
+	return false
 }
 
-func (ptr *QCustom3DItem) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QCustom3DItem) MeshFile() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QCustom3DItem_MeshFile(ptr.Pointer()))
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DItem_QCustom3DItem_TrUtf8(sC, cC, C.int(int32(n))))
+	return ""
 }
 
 //export callbackQCustom3DItem_MeshFileChanged
 func callbackQCustom3DItem_MeshFileChanged(ptr unsafe.Pointer, meshFile C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "meshFileChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(meshFile))
+		(*(*func(string))(signal))(cGoUnpackString(meshFile))
 	}
 
 }
@@ -11516,12 +8703,13 @@ func (ptr *QCustom3DItem) ConnectMeshFileChanged(f func(meshFile string)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "meshFileChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "meshFileChanged", func(meshFile string) {
-				signal.(func(string))(meshFile)
+			f := func(meshFile string) {
+				(*(*func(string))(signal))(meshFile)
 				f(meshFile)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "meshFileChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "meshFileChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "meshFileChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11544,10 +8732,19 @@ func (ptr *QCustom3DItem) MeshFileChanged(meshFile string) {
 	}
 }
 
+func (ptr *QCustom3DItem) Position() *gui.QVector3D {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DItem_Position(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQCustom3DItem_PositionAbsoluteChanged
 func callbackQCustom3DItem_PositionAbsoluteChanged(ptr unsafe.Pointer, positionAbsolute C.char) {
 	if signal := qt.GetSignal(ptr, "positionAbsoluteChanged"); signal != nil {
-		signal.(func(bool))(int8(positionAbsolute) != 0)
+		(*(*func(bool))(signal))(int8(positionAbsolute) != 0)
 	}
 
 }
@@ -11560,12 +8757,13 @@ func (ptr *QCustom3DItem) ConnectPositionAbsoluteChanged(f func(positionAbsolute
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "positionAbsoluteChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "positionAbsoluteChanged", func(positionAbsolute bool) {
-				signal.(func(bool))(positionAbsolute)
+			f := func(positionAbsolute bool) {
+				(*(*func(bool))(signal))(positionAbsolute)
 				f(positionAbsolute)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "positionAbsoluteChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "positionAbsoluteChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "positionAbsoluteChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11586,7 +8784,7 @@ func (ptr *QCustom3DItem) PositionAbsoluteChanged(positionAbsolute bool) {
 //export callbackQCustom3DItem_PositionChanged
 func callbackQCustom3DItem_PositionChanged(ptr unsafe.Pointer, position unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "positionChanged"); signal != nil {
-		signal.(func(*gui.QVector3D))(gui.NewQVector3DFromPointer(position))
+		(*(*func(*gui.QVector3D))(signal))(gui.NewQVector3DFromPointer(position))
 	}
 
 }
@@ -11599,12 +8797,13 @@ func (ptr *QCustom3DItem) ConnectPositionChanged(f func(position *gui.QVector3D)
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "positionChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "positionChanged", func(position *gui.QVector3D) {
-				signal.(func(*gui.QVector3D))(position)
+			f := func(position *gui.QVector3D) {
+				(*(*func(*gui.QVector3D))(signal))(position)
 				f(position)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "positionChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "positionChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "positionChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11622,10 +8821,19 @@ func (ptr *QCustom3DItem) PositionChanged(position gui.QVector3D_ITF) {
 	}
 }
 
+func (ptr *QCustom3DItem) Rotation() *gui.QQuaternion {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQQuaternionFromPointer(C.QCustom3DItem_Rotation(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QQuaternion).DestroyQQuaternion)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQCustom3DItem_RotationChanged
 func callbackQCustom3DItem_RotationChanged(ptr unsafe.Pointer, rotation unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "rotationChanged"); signal != nil {
-		signal.(func(*gui.QQuaternion))(gui.NewQQuaternionFromPointer(rotation))
+		(*(*func(*gui.QQuaternion))(signal))(gui.NewQQuaternionFromPointer(rotation))
 	}
 
 }
@@ -11638,12 +8846,13 @@ func (ptr *QCustom3DItem) ConnectRotationChanged(f func(rotation *gui.QQuaternio
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rotationChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rotationChanged", func(rotation *gui.QQuaternion) {
-				signal.(func(*gui.QQuaternion))(rotation)
+			f := func(rotation *gui.QQuaternion) {
+				(*(*func(*gui.QQuaternion))(signal))(rotation)
 				f(rotation)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rotationChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rotationChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rotationChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11661,10 +8870,19 @@ func (ptr *QCustom3DItem) RotationChanged(rotation gui.QQuaternion_ITF) {
 	}
 }
 
+func (ptr *QCustom3DItem) Scaling() *gui.QVector3D {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DItem_Scaling(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQCustom3DItem_ScalingAbsoluteChanged
 func callbackQCustom3DItem_ScalingAbsoluteChanged(ptr unsafe.Pointer, scalingAbsolute C.char) {
 	if signal := qt.GetSignal(ptr, "scalingAbsoluteChanged"); signal != nil {
-		signal.(func(bool))(int8(scalingAbsolute) != 0)
+		(*(*func(bool))(signal))(int8(scalingAbsolute) != 0)
 	}
 
 }
@@ -11677,12 +8895,13 @@ func (ptr *QCustom3DItem) ConnectScalingAbsoluteChanged(f func(scalingAbsolute b
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "scalingAbsoluteChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "scalingAbsoluteChanged", func(scalingAbsolute bool) {
-				signal.(func(bool))(scalingAbsolute)
+			f := func(scalingAbsolute bool) {
+				(*(*func(bool))(signal))(scalingAbsolute)
 				f(scalingAbsolute)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "scalingAbsoluteChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "scalingAbsoluteChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "scalingAbsoluteChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11703,7 +8922,7 @@ func (ptr *QCustom3DItem) ScalingAbsoluteChanged(scalingAbsolute bool) {
 //export callbackQCustom3DItem_ScalingChanged
 func callbackQCustom3DItem_ScalingChanged(ptr unsafe.Pointer, scaling unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "scalingChanged"); signal != nil {
-		signal.(func(*gui.QVector3D))(gui.NewQVector3DFromPointer(scaling))
+		(*(*func(*gui.QVector3D))(signal))(gui.NewQVector3DFromPointer(scaling))
 	}
 
 }
@@ -11716,12 +8935,13 @@ func (ptr *QCustom3DItem) ConnectScalingChanged(f func(scaling *gui.QVector3D)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "scalingChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "scalingChanged", func(scaling *gui.QVector3D) {
-				signal.(func(*gui.QVector3D))(scaling)
+			f := func(scaling *gui.QVector3D) {
+				(*(*func(*gui.QVector3D))(signal))(scaling)
 				f(scaling)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "scalingChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "scalingChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "scalingChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11818,7 +9038,7 @@ func (ptr *QCustom3DItem) SetVisible(visible bool) {
 //export callbackQCustom3DItem_ShadowCastingChanged
 func callbackQCustom3DItem_ShadowCastingChanged(ptr unsafe.Pointer, shadowCasting C.char) {
 	if signal := qt.GetSignal(ptr, "shadowCastingChanged"); signal != nil {
-		signal.(func(bool))(int8(shadowCasting) != 0)
+		(*(*func(bool))(signal))(int8(shadowCasting) != 0)
 	}
 
 }
@@ -11831,12 +9051,13 @@ func (ptr *QCustom3DItem) ConnectShadowCastingChanged(f func(shadowCasting bool)
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "shadowCastingChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "shadowCastingChanged", func(shadowCasting bool) {
-				signal.(func(bool))(shadowCasting)
+			f := func(shadowCasting bool) {
+				(*(*func(bool))(signal))(shadowCasting)
 				f(shadowCasting)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "shadowCastingChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "shadowCastingChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "shadowCastingChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11854,10 +9075,17 @@ func (ptr *QCustom3DItem) ShadowCastingChanged(shadowCasting bool) {
 	}
 }
 
+func (ptr *QCustom3DItem) TextureFile() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QCustom3DItem_TextureFile(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQCustom3DItem_TextureFileChanged
 func callbackQCustom3DItem_TextureFileChanged(ptr unsafe.Pointer, textureFile C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "textureFileChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(textureFile))
+		(*(*func(string))(signal))(cGoUnpackString(textureFile))
 	}
 
 }
@@ -11870,12 +9098,13 @@ func (ptr *QCustom3DItem) ConnectTextureFileChanged(f func(textureFile string)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "textureFileChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "textureFileChanged", func(textureFile string) {
-				signal.(func(string))(textureFile)
+			f := func(textureFile string) {
+				(*(*func(string))(signal))(textureFile)
 				f(textureFile)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "textureFileChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "textureFileChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "textureFileChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11901,7 +9130,7 @@ func (ptr *QCustom3DItem) TextureFileChanged(textureFile string) {
 //export callbackQCustom3DItem_VisibleChanged
 func callbackQCustom3DItem_VisibleChanged(ptr unsafe.Pointer, visible C.char) {
 	if signal := qt.GetSignal(ptr, "visibleChanged"); signal != nil {
-		signal.(func(bool))(int8(visible) != 0)
+		(*(*func(bool))(signal))(int8(visible) != 0)
 	}
 
 }
@@ -11914,12 +9143,13 @@ func (ptr *QCustom3DItem) ConnectVisibleChanged(f func(visible bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "visibleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "visibleChanged", func(visible bool) {
-				signal.(func(bool))(visible)
+			f := func(visible bool) {
+				(*(*func(bool))(signal))(visible)
 				f(visible)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "visibleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "visibleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "visibleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11940,7 +9170,7 @@ func (ptr *QCustom3DItem) VisibleChanged(visible bool) {
 //export callbackQCustom3DItem_DestroyQCustom3DItem
 func callbackQCustom3DItem_DestroyQCustom3DItem(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QCustom3DItem"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQCustom3DItemFromPointer(ptr).DestroyQCustom3DItemDefault()
 	}
@@ -11950,12 +9180,13 @@ func (ptr *QCustom3DItem) ConnectDestroyQCustom3DItem(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QCustom3DItem"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DItem", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DItem", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DItem", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DItem", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -11981,110 +9212,6 @@ func (ptr *QCustom3DItem) DestroyQCustom3DItemDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QCustom3DItem) MeshFile() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QCustom3DItem_MeshFile(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QCustom3DItem) TextureFile() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QCustom3DItem_TextureFile(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QCustom3DItem) Position() *gui.QVector3D {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DItem_Position(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QCustom3DItem) Scaling() *gui.QVector3D {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DItem_Scaling(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QCustom3DItem) IsPositionAbsolute() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DItem_IsPositionAbsolute(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QCustom3DItem) IsScalingAbsolute() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DItem_IsScalingAbsolute(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QCustom3DItem) IsShadowCasting() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DItem_IsShadowCasting(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QCustom3DItem) IsVisible() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DItem_IsVisible(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQCustom3DItem_MetaObject
-func callbackQCustom3DItem_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQCustom3DItemFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QCustom3DItem) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QCustom3DItem) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QCustom3DItem) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QCustom3DItem_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QCustom3DItem) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QCustom3DItem_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QCustom3DLabel struct {
@@ -12137,66 +9264,19 @@ func NewQCustom3DLabel2(text string, font gui.QFont_ITF, position gui.QVector3D_
 	return NewQCustom3DLabelFromPointer(C.QCustom3DLabel_NewQCustom3DLabel2(C.struct_QtDataVisualization_PackedString{data: textC, len: C.longlong(len(text))}, gui.PointerFromQFont(font), gui.PointerFromQVector3D(position), gui.PointerFromQVector3D(scaling), gui.PointerFromQQuaternion(rotation), core.PointerFromQObject(parent)))
 }
 
-func QCustom3DLabel_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QCustom3DLabel) BackgroundColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.QCustom3DLabel_BackgroundColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DLabel_QCustom3DLabel_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QCustom3DLabel) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DLabel_QCustom3DLabel_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QCustom3DLabel_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DLabel_QCustom3DLabel_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QCustom3DLabel) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DLabel_QCustom3DLabel_TrUtf8(sC, cC, C.int(int32(n))))
+	return nil
 }
 
 //export callbackQCustom3DLabel_BackgroundColorChanged
 func callbackQCustom3DLabel_BackgroundColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "backgroundColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -12209,12 +9289,13 @@ func (ptr *QCustom3DLabel) ConnectBackgroundColorChanged(f func(color *gui.QColo
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "backgroundColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "backgroundColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "backgroundColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "backgroundColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "backgroundColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12235,7 +9316,7 @@ func (ptr *QCustom3DLabel) BackgroundColorChanged(color gui.QColor_ITF) {
 //export callbackQCustom3DLabel_BackgroundEnabledChanged
 func callbackQCustom3DLabel_BackgroundEnabledChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "backgroundEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -12248,12 +9329,13 @@ func (ptr *QCustom3DLabel) ConnectBackgroundEnabledChanged(f func(enabled bool))
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "backgroundEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "backgroundEnabledChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "backgroundEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "backgroundEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "backgroundEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12274,7 +9356,7 @@ func (ptr *QCustom3DLabel) BackgroundEnabledChanged(enabled bool) {
 //export callbackQCustom3DLabel_BorderEnabledChanged
 func callbackQCustom3DLabel_BorderEnabledChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "borderEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -12287,12 +9369,13 @@ func (ptr *QCustom3DLabel) ConnectBorderEnabledChanged(f func(enabled bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "borderEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "borderEnabledChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "borderEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "borderEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "borderEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12313,7 +9396,7 @@ func (ptr *QCustom3DLabel) BorderEnabledChanged(enabled bool) {
 //export callbackQCustom3DLabel_FacingCameraChanged
 func callbackQCustom3DLabel_FacingCameraChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "facingCameraChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -12326,12 +9409,13 @@ func (ptr *QCustom3DLabel) ConnectFacingCameraChanged(f func(enabled bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "facingCameraChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "facingCameraChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "facingCameraChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "facingCameraChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "facingCameraChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12349,10 +9433,19 @@ func (ptr *QCustom3DLabel) FacingCameraChanged(enabled bool) {
 	}
 }
 
+func (ptr *QCustom3DLabel) Font() *gui.QFont {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQFontFromPointer(C.QCustom3DLabel_Font(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QFont).DestroyQFont)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQCustom3DLabel_FontChanged
 func callbackQCustom3DLabel_FontChanged(ptr unsafe.Pointer, font unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "fontChanged"); signal != nil {
-		signal.(func(*gui.QFont))(gui.NewQFontFromPointer(font))
+		(*(*func(*gui.QFont))(signal))(gui.NewQFontFromPointer(font))
 	}
 
 }
@@ -12365,12 +9458,13 @@ func (ptr *QCustom3DLabel) ConnectFontChanged(f func(font *gui.QFont)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "fontChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "fontChanged", func(font *gui.QFont) {
-				signal.(func(*gui.QFont))(font)
+			f := func(font *gui.QFont) {
+				(*(*func(*gui.QFont))(signal))(font)
 				f(font)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "fontChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "fontChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "fontChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12386,6 +9480,27 @@ func (ptr *QCustom3DLabel) FontChanged(font gui.QFont_ITF) {
 	if ptr.Pointer() != nil {
 		C.QCustom3DLabel_FontChanged(ptr.Pointer(), gui.PointerFromQFont(font))
 	}
+}
+
+func (ptr *QCustom3DLabel) IsBackgroundEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DLabel_IsBackgroundEnabled(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QCustom3DLabel) IsBorderEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DLabel_IsBorderEnabled(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QCustom3DLabel) IsFacingCamera() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DLabel_IsFacingCamera(ptr.Pointer())) != 0
+	}
+	return false
 }
 
 func (ptr *QCustom3DLabel) SetBackgroundColor(color gui.QColor_ITF) {
@@ -12435,10 +9550,17 @@ func (ptr *QCustom3DLabel) SetTextColor(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *QCustom3DLabel) Text() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QCustom3DLabel_Text(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQCustom3DLabel_TextChanged
 func callbackQCustom3DLabel_TextChanged(ptr unsafe.Pointer, text C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "textChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(text))
+		(*(*func(string))(signal))(cGoUnpackString(text))
 	}
 
 }
@@ -12451,12 +9573,13 @@ func (ptr *QCustom3DLabel) ConnectTextChanged(f func(text string)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "textChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "textChanged", func(text string) {
-				signal.(func(string))(text)
+			f := func(text string) {
+				(*(*func(string))(signal))(text)
 				f(text)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "textChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "textChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "textChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12479,10 +9602,19 @@ func (ptr *QCustom3DLabel) TextChanged(text string) {
 	}
 }
 
+func (ptr *QCustom3DLabel) TextColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.QCustom3DLabel_TextColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQCustom3DLabel_TextColorChanged
 func callbackQCustom3DLabel_TextColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "textColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -12495,12 +9627,13 @@ func (ptr *QCustom3DLabel) ConnectTextColorChanged(f func(color *gui.QColor)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "textColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "textColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "textColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "textColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "textColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12521,7 +9654,7 @@ func (ptr *QCustom3DLabel) TextColorChanged(color gui.QColor_ITF) {
 //export callbackQCustom3DLabel_DestroyQCustom3DLabel
 func callbackQCustom3DLabel_DestroyQCustom3DLabel(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QCustom3DLabel"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQCustom3DLabelFromPointer(ptr).DestroyQCustom3DLabelDefault()
 	}
@@ -12531,12 +9664,13 @@ func (ptr *QCustom3DLabel) ConnectDestroyQCustom3DLabel(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QCustom3DLabel"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DLabel", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DLabel", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DLabel", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DLabel", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12562,105 +9696,6 @@ func (ptr *QCustom3DLabel) DestroyQCustom3DLabelDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QCustom3DLabel) BackgroundColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.QCustom3DLabel_BackgroundColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QCustom3DLabel) TextColor() *gui.QColor {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.QCustom3DLabel_TextColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QCustom3DLabel) Font() *gui.QFont {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQFontFromPointer(C.QCustom3DLabel_Font(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QFont).DestroyQFont)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QCustom3DLabel) Text() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QCustom3DLabel_Text(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QCustom3DLabel) IsBackgroundEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DLabel_IsBackgroundEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QCustom3DLabel) IsBorderEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DLabel_IsBorderEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QCustom3DLabel) IsFacingCamera() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DLabel_IsFacingCamera(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQCustom3DLabel_MetaObject
-func callbackQCustom3DLabel_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQCustom3DLabelFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QCustom3DLabel) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QCustom3DLabel) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QCustom3DLabel) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QCustom3DLabel_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QCustom3DLabel) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QCustom3DLabel_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QCustom3DVolume struct {
@@ -12704,75 +9739,17 @@ func NewQCustom3DVolume(parent core.QObject_ITF) *QCustom3DVolume {
 	return NewQCustom3DVolumeFromPointer(C.QCustom3DVolume_NewQCustom3DVolume(core.PointerFromQObject(parent)))
 }
 
-func (ptr *QCustom3DVolume) RenderSlice(axis core.Qt__Axis, index int) *gui.QImage {
+func (ptr *QCustom3DVolume) AlphaMultiplier() float32 {
 	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQImageFromPointer(C.QCustom3DVolume_RenderSlice(ptr.Pointer(), C.longlong(axis), C.int(int32(index))))
-		runtime.SetFinalizer(tmpValue, (*gui.QImage).DestroyQImage)
-		return tmpValue
+		return float32(C.QCustom3DVolume_AlphaMultiplier(ptr.Pointer()))
 	}
-	return nil
-}
-
-func QCustom3DVolume_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DVolume_QCustom3DVolume_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QCustom3DVolume) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DVolume_QCustom3DVolume_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QCustom3DVolume_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DVolume_QCustom3DVolume_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QCustom3DVolume) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QCustom3DVolume_QCustom3DVolume_TrUtf8(sC, cC, C.int(int32(n))))
+	return 0
 }
 
 //export callbackQCustom3DVolume_AlphaMultiplierChanged
 func callbackQCustom3DVolume_AlphaMultiplierChanged(ptr unsafe.Pointer, mult C.float) {
 	if signal := qt.GetSignal(ptr, "alphaMultiplierChanged"); signal != nil {
-		signal.(func(float32))(float32(mult))
+		(*(*func(float32))(signal))(float32(mult))
 	}
 
 }
@@ -12785,12 +9762,13 @@ func (ptr *QCustom3DVolume) ConnectAlphaMultiplierChanged(f func(mult float32)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "alphaMultiplierChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "alphaMultiplierChanged", func(mult float32) {
-				signal.(func(float32))(mult)
+			f := func(mult float32) {
+				(*(*func(float32))(signal))(mult)
 				f(mult)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "alphaMultiplierChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "alphaMultiplierChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "alphaMultiplierChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12808,10 +9786,24 @@ func (ptr *QCustom3DVolume) AlphaMultiplierChanged(mult float32) {
 	}
 }
 
+func (ptr *QCustom3DVolume) ColorTable() []uint {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []uint {
+			out := make([]uint, int(l.len))
+			tmpList := NewQCustom3DVolumeFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__colorTable_atList(i)
+			}
+			return out
+		}(C.QCustom3DVolume_ColorTable(ptr.Pointer()))
+	}
+	return make([]uint, 0)
+}
+
 //export callbackQCustom3DVolume_ColorTableChanged
 func callbackQCustom3DVolume_ColorTableChanged(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "colorTableChanged"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -12824,12 +9816,13 @@ func (ptr *QCustom3DVolume) ConnectColorTableChanged(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "colorTableChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "colorTableChanged", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "colorTableChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "colorTableChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "colorTableChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12847,10 +9840,17 @@ func (ptr *QCustom3DVolume) ColorTableChanged() {
 	}
 }
 
+func (ptr *QCustom3DVolume) DrawSliceFrames() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DVolume_DrawSliceFrames(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQCustom3DVolume_DrawSliceFramesChanged
 func callbackQCustom3DVolume_DrawSliceFramesChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "drawSliceFramesChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -12863,12 +9863,13 @@ func (ptr *QCustom3DVolume) ConnectDrawSliceFramesChanged(f func(enabled bool)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "drawSliceFramesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "drawSliceFramesChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "drawSliceFramesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "drawSliceFramesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "drawSliceFramesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12886,10 +9887,17 @@ func (ptr *QCustom3DVolume) DrawSliceFramesChanged(enabled bool) {
 	}
 }
 
+func (ptr *QCustom3DVolume) DrawSlices() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DVolume_DrawSlices(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQCustom3DVolume_DrawSlicesChanged
 func callbackQCustom3DVolume_DrawSlicesChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "drawSlicesChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -12902,12 +9910,13 @@ func (ptr *QCustom3DVolume) ConnectDrawSlicesChanged(f func(enabled bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "drawSlicesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "drawSlicesChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "drawSlicesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "drawSlicesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "drawSlicesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12925,10 +9934,17 @@ func (ptr *QCustom3DVolume) DrawSlicesChanged(enabled bool) {
 	}
 }
 
+func (ptr *QCustom3DVolume) PreserveOpacity() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DVolume_PreserveOpacity(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQCustom3DVolume_PreserveOpacityChanged
 func callbackQCustom3DVolume_PreserveOpacityChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "preserveOpacityChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -12941,12 +9957,13 @@ func (ptr *QCustom3DVolume) ConnectPreserveOpacityChanged(f func(enabled bool)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "preserveOpacityChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "preserveOpacityChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "preserveOpacityChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "preserveOpacityChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "preserveOpacityChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -12964,9 +9981,30 @@ func (ptr *QCustom3DVolume) PreserveOpacityChanged(enabled bool) {
 	}
 }
 
+func (ptr *QCustom3DVolume) RenderSlice(axis core.Qt__Axis, index int) *gui.QImage {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQImageFromPointer(C.QCustom3DVolume_RenderSlice(ptr.Pointer(), C.longlong(axis), C.int(int32(index))))
+		runtime.SetFinalizer(tmpValue, (*gui.QImage).DestroyQImage)
+		return tmpValue
+	}
+	return nil
+}
+
 func (ptr *QCustom3DVolume) SetAlphaMultiplier(mult float32) {
 	if ptr.Pointer() != nil {
 		C.QCustom3DVolume_SetAlphaMultiplier(ptr.Pointer(), C.float(mult))
+	}
+}
+
+func (ptr *QCustom3DVolume) SetColorTable(colors []uint) {
+	if ptr.Pointer() != nil {
+		C.QCustom3DVolume_SetColorTable(ptr.Pointer(), func() unsafe.Pointer {
+			tmpList := NewQCustom3DVolumeFromPointer(NewQCustom3DVolumeFromPointer(nil).__setColorTable_colors_newList())
+			for _, v := range colors {
+				tmpList.__setColorTable_colors_setList(v)
+			}
+			return tmpList.Pointer()
+		}())
 	}
 }
 
@@ -13036,12 +10074,6 @@ func (ptr *QCustom3DVolume) SetSliceIndices(x int, y int, z int) {
 	}
 }
 
-func (ptr *QCustom3DVolume) SetSubTextureData2(axis core.Qt__Axis, index int, image gui.QImage_ITF) {
-	if ptr.Pointer() != nil {
-		C.QCustom3DVolume_SetSubTextureData2(ptr.Pointer(), C.longlong(axis), C.int(int32(index)), gui.PointerFromQImage(image))
-	}
-}
-
 func (ptr *QCustom3DVolume) SetSubTextureData(axis core.Qt__Axis, index int, data string) {
 	if ptr.Pointer() != nil {
 		var dataC *C.char
@@ -13050,6 +10082,12 @@ func (ptr *QCustom3DVolume) SetSubTextureData(axis core.Qt__Axis, index int, dat
 			defer C.free(unsafe.Pointer(dataC))
 		}
 		C.QCustom3DVolume_SetSubTextureData(ptr.Pointer(), C.longlong(axis), C.int(int32(index)), dataC)
+	}
+}
+
+func (ptr *QCustom3DVolume) SetSubTextureData2(axis core.Qt__Axis, index int, image gui.QImage_ITF) {
+	if ptr.Pointer() != nil {
+		C.QCustom3DVolume_SetSubTextureData2(ptr.Pointer(), C.longlong(axis), C.int(int32(index)), gui.PointerFromQImage(image))
 	}
 }
 
@@ -13089,10 +10127,19 @@ func (ptr *QCustom3DVolume) SetUseHighDefShader(enable bool) {
 	}
 }
 
+func (ptr *QCustom3DVolume) SliceFrameColor() *gui.QColor {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQColorFromPointer(C.QCustom3DVolume_SliceFrameColor(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQCustom3DVolume_SliceFrameColorChanged
 func callbackQCustom3DVolume_SliceFrameColorChanged(ptr unsafe.Pointer, color unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "sliceFrameColorChanged"); signal != nil {
-		signal.(func(*gui.QColor))(gui.NewQColorFromPointer(color))
+		(*(*func(*gui.QColor))(signal))(gui.NewQColorFromPointer(color))
 	}
 
 }
@@ -13105,12 +10152,13 @@ func (ptr *QCustom3DVolume) ConnectSliceFrameColorChanged(f func(color *gui.QCol
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "sliceFrameColorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "sliceFrameColorChanged", func(color *gui.QColor) {
-				signal.(func(*gui.QColor))(color)
+			f := func(color *gui.QColor) {
+				(*(*func(*gui.QColor))(signal))(color)
 				f(color)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "sliceFrameColorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "sliceFrameColorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "sliceFrameColorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13128,10 +10176,19 @@ func (ptr *QCustom3DVolume) SliceFrameColorChanged(color gui.QColor_ITF) {
 	}
 }
 
+func (ptr *QCustom3DVolume) SliceFrameGaps() *gui.QVector3D {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DVolume_SliceFrameGaps(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQCustom3DVolume_SliceFrameGapsChanged
 func callbackQCustom3DVolume_SliceFrameGapsChanged(ptr unsafe.Pointer, values unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "sliceFrameGapsChanged"); signal != nil {
-		signal.(func(*gui.QVector3D))(gui.NewQVector3DFromPointer(values))
+		(*(*func(*gui.QVector3D))(signal))(gui.NewQVector3DFromPointer(values))
 	}
 
 }
@@ -13144,12 +10201,13 @@ func (ptr *QCustom3DVolume) ConnectSliceFrameGapsChanged(f func(values *gui.QVec
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "sliceFrameGapsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "sliceFrameGapsChanged", func(values *gui.QVector3D) {
-				signal.(func(*gui.QVector3D))(values)
+			f := func(values *gui.QVector3D) {
+				(*(*func(*gui.QVector3D))(signal))(values)
 				f(values)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "sliceFrameGapsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "sliceFrameGapsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "sliceFrameGapsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13167,10 +10225,19 @@ func (ptr *QCustom3DVolume) SliceFrameGapsChanged(values gui.QVector3D_ITF) {
 	}
 }
 
+func (ptr *QCustom3DVolume) SliceFrameThicknesses() *gui.QVector3D {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DVolume_SliceFrameThicknesses(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQCustom3DVolume_SliceFrameThicknessesChanged
 func callbackQCustom3DVolume_SliceFrameThicknessesChanged(ptr unsafe.Pointer, values unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "sliceFrameThicknessesChanged"); signal != nil {
-		signal.(func(*gui.QVector3D))(gui.NewQVector3DFromPointer(values))
+		(*(*func(*gui.QVector3D))(signal))(gui.NewQVector3DFromPointer(values))
 	}
 
 }
@@ -13183,12 +10250,13 @@ func (ptr *QCustom3DVolume) ConnectSliceFrameThicknessesChanged(f func(values *g
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "sliceFrameThicknessesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "sliceFrameThicknessesChanged", func(values *gui.QVector3D) {
-				signal.(func(*gui.QVector3D))(values)
+			f := func(values *gui.QVector3D) {
+				(*(*func(*gui.QVector3D))(signal))(values)
 				f(values)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "sliceFrameThicknessesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "sliceFrameThicknessesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "sliceFrameThicknessesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13206,10 +10274,19 @@ func (ptr *QCustom3DVolume) SliceFrameThicknessesChanged(values gui.QVector3D_IT
 	}
 }
 
+func (ptr *QCustom3DVolume) SliceFrameWidths() *gui.QVector3D {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DVolume_SliceFrameWidths(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQCustom3DVolume_SliceFrameWidthsChanged
 func callbackQCustom3DVolume_SliceFrameWidthsChanged(ptr unsafe.Pointer, values unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "sliceFrameWidthsChanged"); signal != nil {
-		signal.(func(*gui.QVector3D))(gui.NewQVector3DFromPointer(values))
+		(*(*func(*gui.QVector3D))(signal))(gui.NewQVector3DFromPointer(values))
 	}
 
 }
@@ -13222,12 +10299,13 @@ func (ptr *QCustom3DVolume) ConnectSliceFrameWidthsChanged(f func(values *gui.QV
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "sliceFrameWidthsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "sliceFrameWidthsChanged", func(values *gui.QVector3D) {
-				signal.(func(*gui.QVector3D))(values)
+			f := func(values *gui.QVector3D) {
+				(*(*func(*gui.QVector3D))(signal))(values)
 				f(values)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "sliceFrameWidthsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "sliceFrameWidthsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "sliceFrameWidthsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13245,10 +10323,17 @@ func (ptr *QCustom3DVolume) SliceFrameWidthsChanged(values gui.QVector3D_ITF) {
 	}
 }
 
+func (ptr *QCustom3DVolume) SliceIndexX() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QCustom3DVolume_SliceIndexX(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQCustom3DVolume_SliceIndexXChanged
 func callbackQCustom3DVolume_SliceIndexXChanged(ptr unsafe.Pointer, value C.int) {
 	if signal := qt.GetSignal(ptr, "sliceIndexXChanged"); signal != nil {
-		signal.(func(int))(int(int32(value)))
+		(*(*func(int))(signal))(int(int32(value)))
 	}
 
 }
@@ -13261,12 +10346,13 @@ func (ptr *QCustom3DVolume) ConnectSliceIndexXChanged(f func(value int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "sliceIndexXChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "sliceIndexXChanged", func(value int) {
-				signal.(func(int))(value)
+			f := func(value int) {
+				(*(*func(int))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "sliceIndexXChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "sliceIndexXChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "sliceIndexXChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13284,10 +10370,17 @@ func (ptr *QCustom3DVolume) SliceIndexXChanged(value int) {
 	}
 }
 
+func (ptr *QCustom3DVolume) SliceIndexY() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QCustom3DVolume_SliceIndexY(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQCustom3DVolume_SliceIndexYChanged
 func callbackQCustom3DVolume_SliceIndexYChanged(ptr unsafe.Pointer, value C.int) {
 	if signal := qt.GetSignal(ptr, "sliceIndexYChanged"); signal != nil {
-		signal.(func(int))(int(int32(value)))
+		(*(*func(int))(signal))(int(int32(value)))
 	}
 
 }
@@ -13300,12 +10393,13 @@ func (ptr *QCustom3DVolume) ConnectSliceIndexYChanged(f func(value int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "sliceIndexYChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "sliceIndexYChanged", func(value int) {
-				signal.(func(int))(value)
+			f := func(value int) {
+				(*(*func(int))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "sliceIndexYChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "sliceIndexYChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "sliceIndexYChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13323,10 +10417,17 @@ func (ptr *QCustom3DVolume) SliceIndexYChanged(value int) {
 	}
 }
 
+func (ptr *QCustom3DVolume) SliceIndexZ() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QCustom3DVolume_SliceIndexZ(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQCustom3DVolume_SliceIndexZChanged
 func callbackQCustom3DVolume_SliceIndexZChanged(ptr unsafe.Pointer, value C.int) {
 	if signal := qt.GetSignal(ptr, "sliceIndexZChanged"); signal != nil {
-		signal.(func(int))(int(int32(value)))
+		(*(*func(int))(signal))(int(int32(value)))
 	}
 
 }
@@ -13339,12 +10440,13 @@ func (ptr *QCustom3DVolume) ConnectSliceIndexZChanged(f func(value int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "sliceIndexZChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "sliceIndexZChanged", func(value int) {
-				signal.(func(int))(value)
+			f := func(value int) {
+				(*(*func(int))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "sliceIndexZChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "sliceIndexZChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "sliceIndexZChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13362,10 +10464,17 @@ func (ptr *QCustom3DVolume) SliceIndexZChanged(value int) {
 	}
 }
 
+func (ptr *QCustom3DVolume) TextureDepth() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QCustom3DVolume_TextureDepth(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQCustom3DVolume_TextureDepthChanged
 func callbackQCustom3DVolume_TextureDepthChanged(ptr unsafe.Pointer, value C.int) {
 	if signal := qt.GetSignal(ptr, "textureDepthChanged"); signal != nil {
-		signal.(func(int))(int(int32(value)))
+		(*(*func(int))(signal))(int(int32(value)))
 	}
 
 }
@@ -13378,12 +10487,13 @@ func (ptr *QCustom3DVolume) ConnectTextureDepthChanged(f func(value int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "textureDepthChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "textureDepthChanged", func(value int) {
-				signal.(func(int))(value)
+			f := func(value int) {
+				(*(*func(int))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "textureDepthChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "textureDepthChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "textureDepthChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13401,10 +10511,17 @@ func (ptr *QCustom3DVolume) TextureDepthChanged(value int) {
 	}
 }
 
+func (ptr *QCustom3DVolume) TextureFormat() gui.QImage__Format {
+	if ptr.Pointer() != nil {
+		return gui.QImage__Format(C.QCustom3DVolume_TextureFormat(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQCustom3DVolume_TextureFormatChanged
 func callbackQCustom3DVolume_TextureFormatChanged(ptr unsafe.Pointer, format C.longlong) {
 	if signal := qt.GetSignal(ptr, "textureFormatChanged"); signal != nil {
-		signal.(func(gui.QImage__Format))(gui.QImage__Format(format))
+		(*(*func(gui.QImage__Format))(signal))(gui.QImage__Format(format))
 	}
 
 }
@@ -13417,12 +10534,13 @@ func (ptr *QCustom3DVolume) ConnectTextureFormatChanged(f func(format gui.QImage
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "textureFormatChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "textureFormatChanged", func(format gui.QImage__Format) {
-				signal.(func(gui.QImage__Format))(format)
+			f := func(format gui.QImage__Format) {
+				(*(*func(gui.QImage__Format))(signal))(format)
 				f(format)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "textureFormatChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "textureFormatChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "textureFormatChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13440,10 +10558,17 @@ func (ptr *QCustom3DVolume) TextureFormatChanged(format gui.QImage__Format) {
 	}
 }
 
+func (ptr *QCustom3DVolume) TextureHeight() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QCustom3DVolume_TextureHeight(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQCustom3DVolume_TextureHeightChanged
 func callbackQCustom3DVolume_TextureHeightChanged(ptr unsafe.Pointer, value C.int) {
 	if signal := qt.GetSignal(ptr, "textureHeightChanged"); signal != nil {
-		signal.(func(int))(int(int32(value)))
+		(*(*func(int))(signal))(int(int32(value)))
 	}
 
 }
@@ -13456,12 +10581,13 @@ func (ptr *QCustom3DVolume) ConnectTextureHeightChanged(f func(value int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "textureHeightChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "textureHeightChanged", func(value int) {
-				signal.(func(int))(value)
+			f := func(value int) {
+				(*(*func(int))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "textureHeightChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "textureHeightChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "textureHeightChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13479,10 +10605,17 @@ func (ptr *QCustom3DVolume) TextureHeightChanged(value int) {
 	}
 }
 
+func (ptr *QCustom3DVolume) TextureWidth() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QCustom3DVolume_TextureWidth(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQCustom3DVolume_TextureWidthChanged
 func callbackQCustom3DVolume_TextureWidthChanged(ptr unsafe.Pointer, value C.int) {
 	if signal := qt.GetSignal(ptr, "textureWidthChanged"); signal != nil {
-		signal.(func(int))(int(int32(value)))
+		(*(*func(int))(signal))(int(int32(value)))
 	}
 
 }
@@ -13495,12 +10628,13 @@ func (ptr *QCustom3DVolume) ConnectTextureWidthChanged(f func(value int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "textureWidthChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "textureWidthChanged", func(value int) {
-				signal.(func(int))(value)
+			f := func(value int) {
+				(*(*func(int))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "textureWidthChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "textureWidthChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "textureWidthChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13518,10 +10652,17 @@ func (ptr *QCustom3DVolume) TextureWidthChanged(value int) {
 	}
 }
 
+func (ptr *QCustom3DVolume) UseHighDefShader() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QCustom3DVolume_UseHighDefShader(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQCustom3DVolume_UseHighDefShaderChanged
 func callbackQCustom3DVolume_UseHighDefShaderChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "useHighDefShaderChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -13534,12 +10675,13 @@ func (ptr *QCustom3DVolume) ConnectUseHighDefShaderChanged(f func(enabled bool))
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "useHighDefShaderChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "useHighDefShaderChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "useHighDefShaderChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "useHighDefShaderChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "useHighDefShaderChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13560,7 +10702,7 @@ func (ptr *QCustom3DVolume) UseHighDefShaderChanged(enabled bool) {
 //export callbackQCustom3DVolume_DestroyQCustom3DVolume
 func callbackQCustom3DVolume_DestroyQCustom3DVolume(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QCustom3DVolume"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQCustom3DVolumeFromPointer(ptr).DestroyQCustom3DVolumeDefault()
 	}
@@ -13570,12 +10712,13 @@ func (ptr *QCustom3DVolume) ConnectDestroyQCustom3DVolume(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QCustom3DVolume"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DVolume", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DVolume", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DVolume", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QCustom3DVolume", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13603,180 +10746,55 @@ func (ptr *QCustom3DVolume) DestroyQCustom3DVolumeDefault() {
 	}
 }
 
-func (ptr *QCustom3DVolume) SliceFrameColor() *gui.QColor {
+func (ptr *QCustom3DVolume) __QCustom3DVolume_colorTable_atList2(i int) uint {
 	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQColorFromPointer(C.QCustom3DVolume_SliceFrameColor(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QColor).DestroyQColor)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QCustom3DVolume) TextureFormat() gui.QImage__Format {
-	if ptr.Pointer() != nil {
-		return gui.QImage__Format(C.QCustom3DVolume_TextureFormat(ptr.Pointer()))
+		return uint(uint32(C.QCustom3DVolume___QCustom3DVolume_colorTable_atList2(ptr.Pointer(), C.int(int32(i)))))
 	}
 	return 0
 }
 
-func (ptr *QCustom3DVolume) SliceFrameGaps() *gui.QVector3D {
+func (ptr *QCustom3DVolume) __QCustom3DVolume_colorTable_setList2(i uint) {
 	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DVolume_SliceFrameGaps(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
+		C.QCustom3DVolume___QCustom3DVolume_colorTable_setList2(ptr.Pointer(), C.uint(uint32(i)))
 	}
-	return nil
-}
-
-func (ptr *QCustom3DVolume) SliceFrameThicknesses() *gui.QVector3D {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DVolume_SliceFrameThicknesses(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QCustom3DVolume) SliceFrameWidths() *gui.QVector3D {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.QCustom3DVolume_SliceFrameWidths(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QCustom3DVolume) DrawSliceFrames() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DVolume_DrawSliceFrames(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QCustom3DVolume) DrawSlices() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DVolume_DrawSlices(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QCustom3DVolume) PreserveOpacity() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DVolume_PreserveOpacity(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QCustom3DVolume) UseHighDefShader() bool {
-	if ptr.Pointer() != nil {
-		return C.QCustom3DVolume_UseHighDefShader(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQCustom3DVolume_MetaObject
-func callbackQCustom3DVolume_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQCustom3DVolumeFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QCustom3DVolume) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QCustom3DVolume) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QCustom3DVolume) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QCustom3DVolume_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QCustom3DVolume) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QCustom3DVolume_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QCustom3DVolume) AlphaMultiplier() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QCustom3DVolume_AlphaMultiplier(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QCustom3DVolume) SliceIndexX() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QCustom3DVolume_SliceIndexX(ptr.Pointer())))
-	}
-	return 0
-}
-
-func (ptr *QCustom3DVolume) SliceIndexY() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QCustom3DVolume_SliceIndexY(ptr.Pointer())))
-	}
-	return 0
-}
-
-func (ptr *QCustom3DVolume) SliceIndexZ() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QCustom3DVolume_SliceIndexZ(ptr.Pointer())))
-	}
-	return 0
-}
-
-func (ptr *QCustom3DVolume) TextureDepth() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QCustom3DVolume_TextureDepth(ptr.Pointer())))
-	}
-	return 0
-}
-
-func (ptr *QCustom3DVolume) TextureHeight() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QCustom3DVolume_TextureHeight(ptr.Pointer())))
-	}
-	return 0
-}
-
-func (ptr *QCustom3DVolume) TextureWidth() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QCustom3DVolume_TextureWidth(ptr.Pointer())))
-	}
-	return 0
 }
 
 func (ptr *QCustom3DVolume) __QCustom3DVolume_colorTable_newList2() unsafe.Pointer {
 	return C.QCustom3DVolume___QCustom3DVolume_colorTable_newList2(ptr.Pointer())
 }
 
-func (ptr *QCustom3DVolume) __setColorTable_colors_newList() unsafe.Pointer {
-	return C.QCustom3DVolume___setColorTable_colors_newList(ptr.Pointer())
+func (ptr *QCustom3DVolume) __colorTable_atList(i int) uint {
+	if ptr.Pointer() != nil {
+		return uint(uint32(C.QCustom3DVolume___colorTable_atList(ptr.Pointer(), C.int(int32(i)))))
+	}
+	return 0
+}
+
+func (ptr *QCustom3DVolume) __colorTable_setList(i uint) {
+	if ptr.Pointer() != nil {
+		C.QCustom3DVolume___colorTable_setList(ptr.Pointer(), C.uint(uint32(i)))
+	}
 }
 
 func (ptr *QCustom3DVolume) __colorTable_newList() unsafe.Pointer {
 	return C.QCustom3DVolume___colorTable_newList(ptr.Pointer())
+}
+
+func (ptr *QCustom3DVolume) __setColorTable_colors_atList(i int) uint {
+	if ptr.Pointer() != nil {
+		return uint(uint32(C.QCustom3DVolume___setColorTable_colors_atList(ptr.Pointer(), C.int(int32(i)))))
+	}
+	return 0
+}
+
+func (ptr *QCustom3DVolume) __setColorTable_colors_setList(i uint) {
+	if ptr.Pointer() != nil {
+		C.QCustom3DVolume___setColorTable_colors_setList(ptr.Pointer(), C.uint(uint32(i)))
+	}
+}
+
+func (ptr *QCustom3DVolume) __setColorTable_colors_newList() unsafe.Pointer {
+	return C.QCustom3DVolume___setColorTable_colors_newList(ptr.Pointer())
 }
 
 type QHeightMapSurfaceDataProxy struct {
@@ -13833,66 +10851,19 @@ func NewQHeightMapSurfaceDataProxy3(filename string, parent core.QObject_ITF) *Q
 	return NewQHeightMapSurfaceDataProxyFromPointer(C.QHeightMapSurfaceDataProxy_NewQHeightMapSurfaceDataProxy3(C.struct_QtDataVisualization_PackedString{data: filenameC, len: C.longlong(len(filename))}, core.PointerFromQObject(parent)))
 }
 
-func QHeightMapSurfaceDataProxy_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QHeightMapSurfaceDataProxy) HeightMap() *gui.QImage {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQImageFromPointer(C.QHeightMapSurfaceDataProxy_HeightMap(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QImage).DestroyQImage)
+		return tmpValue
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QHeightMapSurfaceDataProxy_QHeightMapSurfaceDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QHeightMapSurfaceDataProxy_QHeightMapSurfaceDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QHeightMapSurfaceDataProxy_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QHeightMapSurfaceDataProxy_QHeightMapSurfaceDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QHeightMapSurfaceDataProxy_QHeightMapSurfaceDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
+	return nil
 }
 
 //export callbackQHeightMapSurfaceDataProxy_HeightMapChanged
 func callbackQHeightMapSurfaceDataProxy_HeightMapChanged(ptr unsafe.Pointer, image unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "heightMapChanged"); signal != nil {
-		signal.(func(*gui.QImage))(gui.NewQImageFromPointer(image))
+		(*(*func(*gui.QImage))(signal))(gui.NewQImageFromPointer(image))
 	}
 
 }
@@ -13905,12 +10876,13 @@ func (ptr *QHeightMapSurfaceDataProxy) ConnectHeightMapChanged(f func(image *gui
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "heightMapChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "heightMapChanged", func(image *gui.QImage) {
-				signal.(func(*gui.QImage))(image)
+			f := func(image *gui.QImage) {
+				(*(*func(*gui.QImage))(signal))(image)
 				f(image)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "heightMapChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "heightMapChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "heightMapChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13928,10 +10900,17 @@ func (ptr *QHeightMapSurfaceDataProxy) HeightMapChanged(image gui.QImage_ITF) {
 	}
 }
 
+func (ptr *QHeightMapSurfaceDataProxy) HeightMapFile() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QHeightMapSurfaceDataProxy_HeightMapFile(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQHeightMapSurfaceDataProxy_HeightMapFileChanged
 func callbackQHeightMapSurfaceDataProxy_HeightMapFileChanged(ptr unsafe.Pointer, filename C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "heightMapFileChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(filename))
+		(*(*func(string))(signal))(cGoUnpackString(filename))
 	}
 
 }
@@ -13944,12 +10923,13 @@ func (ptr *QHeightMapSurfaceDataProxy) ConnectHeightMapFileChanged(f func(filena
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "heightMapFileChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "heightMapFileChanged", func(filename string) {
-				signal.(func(string))(filename)
+			f := func(filename string) {
+				(*(*func(string))(signal))(filename)
 				f(filename)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "heightMapFileChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "heightMapFileChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "heightMapFileChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -13972,10 +10952,17 @@ func (ptr *QHeightMapSurfaceDataProxy) HeightMapFileChanged(filename string) {
 	}
 }
 
+func (ptr *QHeightMapSurfaceDataProxy) MaxXValue() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QHeightMapSurfaceDataProxy_MaxXValue(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQHeightMapSurfaceDataProxy_MaxXValueChanged
 func callbackQHeightMapSurfaceDataProxy_MaxXValueChanged(ptr unsafe.Pointer, value C.float) {
 	if signal := qt.GetSignal(ptr, "maxXValueChanged"); signal != nil {
-		signal.(func(float32))(float32(value))
+		(*(*func(float32))(signal))(float32(value))
 	}
 
 }
@@ -13988,12 +10975,13 @@ func (ptr *QHeightMapSurfaceDataProxy) ConnectMaxXValueChanged(f func(value floa
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "maxXValueChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "maxXValueChanged", func(value float32) {
-				signal.(func(float32))(value)
+			f := func(value float32) {
+				(*(*func(float32))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "maxXValueChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "maxXValueChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "maxXValueChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14011,10 +10999,17 @@ func (ptr *QHeightMapSurfaceDataProxy) MaxXValueChanged(value float32) {
 	}
 }
 
+func (ptr *QHeightMapSurfaceDataProxy) MaxZValue() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QHeightMapSurfaceDataProxy_MaxZValue(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQHeightMapSurfaceDataProxy_MaxZValueChanged
 func callbackQHeightMapSurfaceDataProxy_MaxZValueChanged(ptr unsafe.Pointer, value C.float) {
 	if signal := qt.GetSignal(ptr, "maxZValueChanged"); signal != nil {
-		signal.(func(float32))(float32(value))
+		(*(*func(float32))(signal))(float32(value))
 	}
 
 }
@@ -14027,12 +11022,13 @@ func (ptr *QHeightMapSurfaceDataProxy) ConnectMaxZValueChanged(f func(value floa
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "maxZValueChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "maxZValueChanged", func(value float32) {
-				signal.(func(float32))(value)
+			f := func(value float32) {
+				(*(*func(float32))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "maxZValueChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "maxZValueChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "maxZValueChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14050,10 +11046,17 @@ func (ptr *QHeightMapSurfaceDataProxy) MaxZValueChanged(value float32) {
 	}
 }
 
+func (ptr *QHeightMapSurfaceDataProxy) MinXValue() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QHeightMapSurfaceDataProxy_MinXValue(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQHeightMapSurfaceDataProxy_MinXValueChanged
 func callbackQHeightMapSurfaceDataProxy_MinXValueChanged(ptr unsafe.Pointer, value C.float) {
 	if signal := qt.GetSignal(ptr, "minXValueChanged"); signal != nil {
-		signal.(func(float32))(float32(value))
+		(*(*func(float32))(signal))(float32(value))
 	}
 
 }
@@ -14066,12 +11069,13 @@ func (ptr *QHeightMapSurfaceDataProxy) ConnectMinXValueChanged(f func(value floa
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "minXValueChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "minXValueChanged", func(value float32) {
-				signal.(func(float32))(value)
+			f := func(value float32) {
+				(*(*func(float32))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "minXValueChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "minXValueChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "minXValueChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14089,10 +11093,17 @@ func (ptr *QHeightMapSurfaceDataProxy) MinXValueChanged(value float32) {
 	}
 }
 
+func (ptr *QHeightMapSurfaceDataProxy) MinZValue() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QHeightMapSurfaceDataProxy_MinZValue(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQHeightMapSurfaceDataProxy_MinZValueChanged
 func callbackQHeightMapSurfaceDataProxy_MinZValueChanged(ptr unsafe.Pointer, value C.float) {
 	if signal := qt.GetSignal(ptr, "minZValueChanged"); signal != nil {
-		signal.(func(float32))(float32(value))
+		(*(*func(float32))(signal))(float32(value))
 	}
 
 }
@@ -14105,12 +11116,13 @@ func (ptr *QHeightMapSurfaceDataProxy) ConnectMinZValueChanged(f func(value floa
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "minZValueChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "minZValueChanged", func(value float32) {
-				signal.(func(float32))(value)
+			f := func(value float32) {
+				(*(*func(float32))(signal))(value)
 				f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "minZValueChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "minZValueChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "minZValueChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14178,7 +11190,7 @@ func (ptr *QHeightMapSurfaceDataProxy) SetValueRanges(minX float32, maxX float32
 //export callbackQHeightMapSurfaceDataProxy_DestroyQHeightMapSurfaceDataProxy
 func callbackQHeightMapSurfaceDataProxy_DestroyQHeightMapSurfaceDataProxy(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QHeightMapSurfaceDataProxy"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQHeightMapSurfaceDataProxyFromPointer(ptr).DestroyQHeightMapSurfaceDataProxyDefault()
 	}
@@ -14188,12 +11200,13 @@ func (ptr *QHeightMapSurfaceDataProxy) ConnectDestroyQHeightMapSurfaceDataProxy(
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QHeightMapSurfaceDataProxy"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QHeightMapSurfaceDataProxy", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QHeightMapSurfaceDataProxy", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QHeightMapSurfaceDataProxy", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QHeightMapSurfaceDataProxy", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14219,94 +11232,6 @@ func (ptr *QHeightMapSurfaceDataProxy) DestroyQHeightMapSurfaceDataProxyDefault(
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) HeightMap() *gui.QImage {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQImageFromPointer(C.QHeightMapSurfaceDataProxy_HeightMap(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QImage).DestroyQImage)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) HeightMapFile() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QHeightMapSurfaceDataProxy_HeightMapFile(ptr.Pointer()))
-	}
-	return ""
-}
-
-//export callbackQHeightMapSurfaceDataProxy_MetaObject
-func callbackQHeightMapSurfaceDataProxy_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQHeightMapSurfaceDataProxyFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QHeightMapSurfaceDataProxy_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QHeightMapSurfaceDataProxy_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) MaxXValue() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QHeightMapSurfaceDataProxy_MaxXValue(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) MaxZValue() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QHeightMapSurfaceDataProxy_MaxZValue(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) MinXValue() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QHeightMapSurfaceDataProxy_MinXValue(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QHeightMapSurfaceDataProxy) MinZValue() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QHeightMapSurfaceDataProxy_MinZValue(ptr.Pointer()))
-	}
-	return 0
 }
 
 type QItemModelBarDataProxy struct {
@@ -14358,8 +11283,21 @@ const (
 	QItemModelBarDataProxy__MMBCumulative QItemModelBarDataProxy__MultiMatchBehavior = QItemModelBarDataProxy__MultiMatchBehavior(3)
 )
 
+func NewQItemModelBarDataProxy(parent core.QObject_ITF) *QItemModelBarDataProxy {
+	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy(core.PointerFromQObject(parent)))
+}
+
 func NewQItemModelBarDataProxy2(itemModel core.QAbstractItemModel_ITF, parent core.QObject_ITF) *QItemModelBarDataProxy {
 	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy2(core.PointerFromQAbstractItemModel(itemModel), core.PointerFromQObject(parent)))
+}
+
+func NewQItemModelBarDataProxy3(itemModel core.QAbstractItemModel_ITF, valueRole string, parent core.QObject_ITF) *QItemModelBarDataProxy {
+	var valueRoleC *C.char
+	if valueRole != "" {
+		valueRoleC = C.CString(valueRole)
+		defer C.free(unsafe.Pointer(valueRoleC))
+	}
+	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy3(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: valueRoleC, len: C.longlong(len(valueRole))}, core.PointerFromQObject(parent)))
 }
 
 func NewQItemModelBarDataProxy4(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, valueRole string, parent core.QObject_ITF) *QItemModelBarDataProxy {
@@ -14405,6 +11343,29 @@ func NewQItemModelBarDataProxy5(itemModel core.QAbstractItemModel_ITF, rowRole s
 	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy5(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: valueRoleC, len: C.longlong(len(valueRole))}, C.struct_QtDataVisualization_PackedString{data: rotationRoleC, len: C.longlong(len(rotationRole))}, core.PointerFromQObject(parent)))
 }
 
+func NewQItemModelBarDataProxy6(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, valueRole string, rowCategories []string, columnCategories []string, parent core.QObject_ITF) *QItemModelBarDataProxy {
+	var rowRoleC *C.char
+	if rowRole != "" {
+		rowRoleC = C.CString(rowRole)
+		defer C.free(unsafe.Pointer(rowRoleC))
+	}
+	var columnRoleC *C.char
+	if columnRole != "" {
+		columnRoleC = C.CString(columnRole)
+		defer C.free(unsafe.Pointer(columnRoleC))
+	}
+	var valueRoleC *C.char
+	if valueRole != "" {
+		valueRoleC = C.CString(valueRole)
+		defer C.free(unsafe.Pointer(valueRoleC))
+	}
+	rowCategoriesC := C.CString(strings.Join(rowCategories, "¡¦!"))
+	defer C.free(unsafe.Pointer(rowCategoriesC))
+	columnCategoriesC := C.CString(strings.Join(columnCategories, "¡¦!"))
+	defer C.free(unsafe.Pointer(columnCategoriesC))
+	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy6(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: valueRoleC, len: C.longlong(len(valueRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "¡¦!")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "¡¦!")))}, core.PointerFromQObject(parent)))
+}
+
 func NewQItemModelBarDataProxy7(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, valueRole string, rotationRole string, rowCategories []string, columnCategories []string, parent core.QObject_ITF) *QItemModelBarDataProxy {
 	var rowRoleC *C.char
 	if rowRole != "" {
@@ -14426,133 +11387,24 @@ func NewQItemModelBarDataProxy7(itemModel core.QAbstractItemModel_ITF, rowRole s
 		rotationRoleC = C.CString(rotationRole)
 		defer C.free(unsafe.Pointer(rotationRoleC))
 	}
-	rowCategoriesC := C.CString(strings.Join(rowCategories, "|"))
+	rowCategoriesC := C.CString(strings.Join(rowCategories, "¡¦!"))
 	defer C.free(unsafe.Pointer(rowCategoriesC))
-	columnCategoriesC := C.CString(strings.Join(columnCategories, "|"))
+	columnCategoriesC := C.CString(strings.Join(columnCategories, "¡¦!"))
 	defer C.free(unsafe.Pointer(columnCategoriesC))
-	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy7(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: valueRoleC, len: C.longlong(len(valueRole))}, C.struct_QtDataVisualization_PackedString{data: rotationRoleC, len: C.longlong(len(rotationRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "|")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "|")))}, core.PointerFromQObject(parent)))
+	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy7(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: valueRoleC, len: C.longlong(len(valueRole))}, C.struct_QtDataVisualization_PackedString{data: rotationRoleC, len: C.longlong(len(rotationRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "¡¦!")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "¡¦!")))}, core.PointerFromQObject(parent)))
 }
 
-func NewQItemModelBarDataProxy6(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, valueRole string, rowCategories []string, columnCategories []string, parent core.QObject_ITF) *QItemModelBarDataProxy {
-	var rowRoleC *C.char
-	if rowRole != "" {
-		rowRoleC = C.CString(rowRole)
-		defer C.free(unsafe.Pointer(rowRoleC))
-	}
-	var columnRoleC *C.char
-	if columnRole != "" {
-		columnRoleC = C.CString(columnRole)
-		defer C.free(unsafe.Pointer(columnRoleC))
-	}
-	var valueRoleC *C.char
-	if valueRole != "" {
-		valueRoleC = C.CString(valueRole)
-		defer C.free(unsafe.Pointer(valueRoleC))
-	}
-	rowCategoriesC := C.CString(strings.Join(rowCategories, "|"))
-	defer C.free(unsafe.Pointer(rowCategoriesC))
-	columnCategoriesC := C.CString(strings.Join(columnCategories, "|"))
-	defer C.free(unsafe.Pointer(columnCategoriesC))
-	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy6(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: valueRoleC, len: C.longlong(len(valueRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "|")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "|")))}, core.PointerFromQObject(parent)))
-}
-
-func NewQItemModelBarDataProxy3(itemModel core.QAbstractItemModel_ITF, valueRole string, parent core.QObject_ITF) *QItemModelBarDataProxy {
-	var valueRoleC *C.char
-	if valueRole != "" {
-		valueRoleC = C.CString(valueRole)
-		defer C.free(unsafe.Pointer(valueRoleC))
-	}
-	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy3(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: valueRoleC, len: C.longlong(len(valueRole))}, core.PointerFromQObject(parent)))
-}
-
-func NewQItemModelBarDataProxy(parent core.QObject_ITF) *QItemModelBarDataProxy {
-	return NewQItemModelBarDataProxyFromPointer(C.QItemModelBarDataProxy_NewQItemModelBarDataProxy(core.PointerFromQObject(parent)))
-}
-
-func QItemModelBarDataProxy_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelBarDataProxy_QItemModelBarDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QItemModelBarDataProxy) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelBarDataProxy_QItemModelBarDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QItemModelBarDataProxy_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelBarDataProxy_QItemModelBarDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QItemModelBarDataProxy) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelBarDataProxy_QItemModelBarDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QItemModelBarDataProxy) ColumnCategoryIndex(category string) int {
+func (ptr *QItemModelBarDataProxy) AutoColumnCategories() bool {
 	if ptr.Pointer() != nil {
-		var categoryC *C.char
-		if category != "" {
-			categoryC = C.CString(category)
-			defer C.free(unsafe.Pointer(categoryC))
-		}
-		return int(int32(C.QItemModelBarDataProxy_ColumnCategoryIndex(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoryC, len: C.longlong(len(category))})))
+		return int8(C.QItemModelBarDataProxy_AutoColumnCategories(ptr.Pointer())) != 0
 	}
-	return 0
-}
-
-func (ptr *QItemModelBarDataProxy) RowCategoryIndex(category string) int {
-	if ptr.Pointer() != nil {
-		var categoryC *C.char
-		if category != "" {
-			categoryC = C.CString(category)
-			defer C.free(unsafe.Pointer(categoryC))
-		}
-		return int(int32(C.QItemModelBarDataProxy_RowCategoryIndex(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoryC, len: C.longlong(len(category))})))
-	}
-	return 0
+	return false
 }
 
 //export callbackQItemModelBarDataProxy_AutoColumnCategoriesChanged
 func callbackQItemModelBarDataProxy_AutoColumnCategoriesChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "autoColumnCategoriesChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -14565,12 +11417,13 @@ func (ptr *QItemModelBarDataProxy) ConnectAutoColumnCategoriesChanged(f func(ena
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "autoColumnCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "autoColumnCategoriesChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "autoColumnCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "autoColumnCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "autoColumnCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14588,10 +11441,17 @@ func (ptr *QItemModelBarDataProxy) AutoColumnCategoriesChanged(enable bool) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) AutoRowCategories() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QItemModelBarDataProxy_AutoRowCategories(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQItemModelBarDataProxy_AutoRowCategoriesChanged
 func callbackQItemModelBarDataProxy_AutoRowCategoriesChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "autoRowCategoriesChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -14604,12 +11464,13 @@ func (ptr *QItemModelBarDataProxy) ConnectAutoRowCategoriesChanged(f func(enable
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "autoRowCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "autoRowCategoriesChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "autoRowCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "autoRowCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "autoRowCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14627,10 +11488,17 @@ func (ptr *QItemModelBarDataProxy) AutoRowCategoriesChanged(enable bool) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) ColumnCategories() []string {
+	if ptr.Pointer() != nil {
+		return unpackStringList(cGoUnpackString(C.QItemModelBarDataProxy_ColumnCategories(ptr.Pointer())))
+	}
+	return make([]string, 0)
+}
+
 //export callbackQItemModelBarDataProxy_ColumnCategoriesChanged
 func callbackQItemModelBarDataProxy_ColumnCategoriesChanged(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "columnCategoriesChanged"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -14643,12 +11511,13 @@ func (ptr *QItemModelBarDataProxy) ConnectColumnCategoriesChanged(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnCategoriesChanged", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14666,10 +11535,29 @@ func (ptr *QItemModelBarDataProxy) ColumnCategoriesChanged() {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) ColumnCategoryIndex(category string) int {
+	if ptr.Pointer() != nil {
+		var categoryC *C.char
+		if category != "" {
+			categoryC = C.CString(category)
+			defer C.free(unsafe.Pointer(categoryC))
+		}
+		return int(int32(C.QItemModelBarDataProxy_ColumnCategoryIndex(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoryC, len: C.longlong(len(category))})))
+	}
+	return 0
+}
+
+func (ptr *QItemModelBarDataProxy) ColumnRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelBarDataProxy_ColumnRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelBarDataProxy_ColumnRoleChanged
 func callbackQItemModelBarDataProxy_ColumnRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "columnRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -14682,12 +11570,13 @@ func (ptr *QItemModelBarDataProxy) ConnectColumnRoleChanged(f func(role string))
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14710,10 +11599,19 @@ func (ptr *QItemModelBarDataProxy) ColumnRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) ColumnRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelBarDataProxy_ColumnRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelBarDataProxy_ColumnRolePatternChanged
 func callbackQItemModelBarDataProxy_ColumnRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "columnRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -14726,12 +11624,13 @@ func (ptr *QItemModelBarDataProxy) ConnectColumnRolePatternChanged(f func(patter
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14749,10 +11648,17 @@ func (ptr *QItemModelBarDataProxy) ColumnRolePatternChanged(pattern core.QRegExp
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) ColumnRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelBarDataProxy_ColumnRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelBarDataProxy_ColumnRoleReplaceChanged
 func callbackQItemModelBarDataProxy_ColumnRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "columnRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -14765,12 +11671,13 @@ func (ptr *QItemModelBarDataProxy) ConnectColumnRoleReplaceChanged(f func(replac
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14793,10 +11700,21 @@ func (ptr *QItemModelBarDataProxy) ColumnRoleReplaceChanged(replace string) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) ItemModel() *core.QAbstractItemModel {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQAbstractItemModelFromPointer(C.QItemModelBarDataProxy_ItemModel(ptr.Pointer()))
+		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
+			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
+		}
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelBarDataProxy_ItemModelChanged
 func callbackQItemModelBarDataProxy_ItemModelChanged(ptr unsafe.Pointer, itemModel unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "itemModelChanged"); signal != nil {
-		signal.(func(*core.QAbstractItemModel))(core.NewQAbstractItemModelFromPointer(itemModel))
+		(*(*func(*core.QAbstractItemModel))(signal))(core.NewQAbstractItemModelFromPointer(itemModel))
 	}
 
 }
@@ -14809,12 +11727,13 @@ func (ptr *QItemModelBarDataProxy) ConnectItemModelChanged(f func(itemModel *cor
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemModelChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", func(itemModel *core.QAbstractItemModel) {
-				signal.(func(*core.QAbstractItemModel))(itemModel)
+			f := func(itemModel *core.QAbstractItemModel) {
+				(*(*func(*core.QAbstractItemModel))(signal))(itemModel)
 				f(itemModel)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14832,10 +11751,17 @@ func (ptr *QItemModelBarDataProxy) ItemModelChanged(itemModel core.QAbstractItem
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) MultiMatchBehavior() QItemModelBarDataProxy__MultiMatchBehavior {
+	if ptr.Pointer() != nil {
+		return QItemModelBarDataProxy__MultiMatchBehavior(C.QItemModelBarDataProxy_MultiMatchBehavior(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQItemModelBarDataProxy_MultiMatchBehaviorChanged
 func callbackQItemModelBarDataProxy_MultiMatchBehaviorChanged(ptr unsafe.Pointer, behavior C.longlong) {
 	if signal := qt.GetSignal(ptr, "multiMatchBehaviorChanged"); signal != nil {
-		signal.(func(QItemModelBarDataProxy__MultiMatchBehavior))(QItemModelBarDataProxy__MultiMatchBehavior(behavior))
+		(*(*func(QItemModelBarDataProxy__MultiMatchBehavior))(signal))(QItemModelBarDataProxy__MultiMatchBehavior(behavior))
 	}
 
 }
@@ -14848,12 +11774,13 @@ func (ptr *QItemModelBarDataProxy) ConnectMultiMatchBehaviorChanged(f func(behav
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "multiMatchBehaviorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "multiMatchBehaviorChanged", func(behavior QItemModelBarDataProxy__MultiMatchBehavior) {
-				signal.(func(QItemModelBarDataProxy__MultiMatchBehavior))(behavior)
+			f := func(behavior QItemModelBarDataProxy__MultiMatchBehavior) {
+				(*(*func(QItemModelBarDataProxy__MultiMatchBehavior))(signal))(behavior)
 				f(behavior)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "multiMatchBehaviorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "multiMatchBehaviorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "multiMatchBehaviorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14893,18 +11820,25 @@ func (ptr *QItemModelBarDataProxy) Remap(rowRole string, columnRole string, valu
 			rotationRoleC = C.CString(rotationRole)
 			defer C.free(unsafe.Pointer(rotationRoleC))
 		}
-		rowCategoriesC := C.CString(strings.Join(rowCategories, "|"))
+		rowCategoriesC := C.CString(strings.Join(rowCategories, "¡¦!"))
 		defer C.free(unsafe.Pointer(rowCategoriesC))
-		columnCategoriesC := C.CString(strings.Join(columnCategories, "|"))
+		columnCategoriesC := C.CString(strings.Join(columnCategories, "¡¦!"))
 		defer C.free(unsafe.Pointer(columnCategoriesC))
-		C.QItemModelBarDataProxy_Remap(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: valueRoleC, len: C.longlong(len(valueRole))}, C.struct_QtDataVisualization_PackedString{data: rotationRoleC, len: C.longlong(len(rotationRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "|")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "|")))})
+		C.QItemModelBarDataProxy_Remap(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: valueRoleC, len: C.longlong(len(valueRole))}, C.struct_QtDataVisualization_PackedString{data: rotationRoleC, len: C.longlong(len(rotationRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "¡¦!")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "¡¦!")))})
 	}
+}
+
+func (ptr *QItemModelBarDataProxy) RotationRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelBarDataProxy_RotationRole(ptr.Pointer()))
+	}
+	return ""
 }
 
 //export callbackQItemModelBarDataProxy_RotationRoleChanged
 func callbackQItemModelBarDataProxy_RotationRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "rotationRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -14917,12 +11851,13 @@ func (ptr *QItemModelBarDataProxy) ConnectRotationRoleChanged(f func(role string
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rotationRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rotationRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rotationRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14945,10 +11880,19 @@ func (ptr *QItemModelBarDataProxy) RotationRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) RotationRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelBarDataProxy_RotationRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelBarDataProxy_RotationRolePatternChanged
 func callbackQItemModelBarDataProxy_RotationRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "rotationRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -14961,12 +11905,13 @@ func (ptr *QItemModelBarDataProxy) ConnectRotationRolePatternChanged(f func(patt
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rotationRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rotationRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rotationRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -14984,10 +11929,17 @@ func (ptr *QItemModelBarDataProxy) RotationRolePatternChanged(pattern core.QRegE
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) RotationRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelBarDataProxy_RotationRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelBarDataProxy_RotationRoleReplaceChanged
 func callbackQItemModelBarDataProxy_RotationRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "rotationRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -15000,12 +11952,13 @@ func (ptr *QItemModelBarDataProxy) ConnectRotationRoleReplaceChanged(f func(repl
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rotationRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rotationRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rotationRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15028,10 +11981,17 @@ func (ptr *QItemModelBarDataProxy) RotationRoleReplaceChanged(replace string) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) RowCategories() []string {
+	if ptr.Pointer() != nil {
+		return unpackStringList(cGoUnpackString(C.QItemModelBarDataProxy_RowCategories(ptr.Pointer())))
+	}
+	return make([]string, 0)
+}
+
 //export callbackQItemModelBarDataProxy_RowCategoriesChanged
 func callbackQItemModelBarDataProxy_RowCategoriesChanged(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "rowCategoriesChanged"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -15044,12 +12004,13 @@ func (ptr *QItemModelBarDataProxy) ConnectRowCategoriesChanged(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowCategoriesChanged", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15067,10 +12028,29 @@ func (ptr *QItemModelBarDataProxy) RowCategoriesChanged() {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) RowCategoryIndex(category string) int {
+	if ptr.Pointer() != nil {
+		var categoryC *C.char
+		if category != "" {
+			categoryC = C.CString(category)
+			defer C.free(unsafe.Pointer(categoryC))
+		}
+		return int(int32(C.QItemModelBarDataProxy_RowCategoryIndex(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoryC, len: C.longlong(len(category))})))
+	}
+	return 0
+}
+
+func (ptr *QItemModelBarDataProxy) RowRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelBarDataProxy_RowRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelBarDataProxy_RowRoleChanged
 func callbackQItemModelBarDataProxy_RowRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "rowRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -15083,12 +12063,13 @@ func (ptr *QItemModelBarDataProxy) ConnectRowRoleChanged(f func(role string)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15111,10 +12092,19 @@ func (ptr *QItemModelBarDataProxy) RowRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) RowRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelBarDataProxy_RowRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelBarDataProxy_RowRolePatternChanged
 func callbackQItemModelBarDataProxy_RowRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "rowRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -15127,12 +12117,13 @@ func (ptr *QItemModelBarDataProxy) ConnectRowRolePatternChanged(f func(pattern *
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15150,10 +12141,17 @@ func (ptr *QItemModelBarDataProxy) RowRolePatternChanged(pattern core.QRegExp_IT
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) RowRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelBarDataProxy_RowRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelBarDataProxy_RowRoleReplaceChanged
 func callbackQItemModelBarDataProxy_RowRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "rowRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -15166,12 +12164,13 @@ func (ptr *QItemModelBarDataProxy) ConnectRowRoleReplaceChanged(f func(replace s
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15208,9 +12207,9 @@ func (ptr *QItemModelBarDataProxy) SetAutoRowCategories(enable bool) {
 
 func (ptr *QItemModelBarDataProxy) SetColumnCategories(categories []string) {
 	if ptr.Pointer() != nil {
-		categoriesC := C.CString(strings.Join(categories, "|"))
+		categoriesC := C.CString(strings.Join(categories, "¡¦!"))
 		defer C.free(unsafe.Pointer(categoriesC))
-		C.QItemModelBarDataProxy_SetColumnCategories(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoriesC, len: C.longlong(len(strings.Join(categories, "|")))})
+		C.QItemModelBarDataProxy_SetColumnCategories(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoriesC, len: C.longlong(len(strings.Join(categories, "¡¦!")))})
 	}
 }
 
@@ -15284,9 +12283,9 @@ func (ptr *QItemModelBarDataProxy) SetRotationRoleReplace(replace string) {
 
 func (ptr *QItemModelBarDataProxy) SetRowCategories(categories []string) {
 	if ptr.Pointer() != nil {
-		categoriesC := C.CString(strings.Join(categories, "|"))
+		categoriesC := C.CString(strings.Join(categories, "¡¦!"))
 		defer C.free(unsafe.Pointer(categoriesC))
-		C.QItemModelBarDataProxy_SetRowCategories(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoriesC, len: C.longlong(len(strings.Join(categories, "|")))})
+		C.QItemModelBarDataProxy_SetRowCategories(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoriesC, len: C.longlong(len(strings.Join(categories, "¡¦!")))})
 	}
 }
 
@@ -15352,10 +12351,17 @@ func (ptr *QItemModelBarDataProxy) SetValueRoleReplace(replace string) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) UseModelCategories() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QItemModelBarDataProxy_UseModelCategories(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQItemModelBarDataProxy_UseModelCategoriesChanged
 func callbackQItemModelBarDataProxy_UseModelCategoriesChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "useModelCategoriesChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -15368,12 +12374,13 @@ func (ptr *QItemModelBarDataProxy) ConnectUseModelCategoriesChanged(f func(enabl
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "useModelCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "useModelCategoriesChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "useModelCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "useModelCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "useModelCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15391,10 +12398,17 @@ func (ptr *QItemModelBarDataProxy) UseModelCategoriesChanged(enable bool) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) ValueRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelBarDataProxy_ValueRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelBarDataProxy_ValueRoleChanged
 func callbackQItemModelBarDataProxy_ValueRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "valueRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -15407,12 +12421,13 @@ func (ptr *QItemModelBarDataProxy) ConnectValueRoleChanged(f func(role string)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "valueRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "valueRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "valueRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "valueRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "valueRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15435,10 +12450,19 @@ func (ptr *QItemModelBarDataProxy) ValueRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) ValueRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelBarDataProxy_ValueRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelBarDataProxy_ValueRolePatternChanged
 func callbackQItemModelBarDataProxy_ValueRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "valueRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -15451,12 +12475,13 @@ func (ptr *QItemModelBarDataProxy) ConnectValueRolePatternChanged(f func(pattern
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "valueRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "valueRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "valueRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "valueRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "valueRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15474,10 +12499,17 @@ func (ptr *QItemModelBarDataProxy) ValueRolePatternChanged(pattern core.QRegExp_
 	}
 }
 
+func (ptr *QItemModelBarDataProxy) ValueRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelBarDataProxy_ValueRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelBarDataProxy_ValueRoleReplaceChanged
 func callbackQItemModelBarDataProxy_ValueRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "valueRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -15490,12 +12522,13 @@ func (ptr *QItemModelBarDataProxy) ConnectValueRoleReplaceChanged(f func(replace
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "valueRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "valueRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "valueRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "valueRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "valueRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15521,7 +12554,7 @@ func (ptr *QItemModelBarDataProxy) ValueRoleReplaceChanged(replace string) {
 //export callbackQItemModelBarDataProxy_DestroyQItemModelBarDataProxy
 func callbackQItemModelBarDataProxy_DestroyQItemModelBarDataProxy(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QItemModelBarDataProxy"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQItemModelBarDataProxyFromPointer(ptr).DestroyQItemModelBarDataProxyDefault()
 	}
@@ -15531,12 +12564,13 @@ func (ptr *QItemModelBarDataProxy) ConnectDestroyQItemModelBarDataProxy(f func()
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QItemModelBarDataProxy"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QItemModelBarDataProxy", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QItemModelBarDataProxy", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QItemModelBarDataProxy", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QItemModelBarDataProxy", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15562,195 +12596,6 @@ func (ptr *QItemModelBarDataProxy) DestroyQItemModelBarDataProxyDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QItemModelBarDataProxy) ItemModel() *core.QAbstractItemModel {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQAbstractItemModelFromPointer(C.QItemModelBarDataProxy_ItemModel(ptr.Pointer()))
-		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
-			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
-		}
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelBarDataProxy) MultiMatchBehavior() QItemModelBarDataProxy__MultiMatchBehavior {
-	if ptr.Pointer() != nil {
-		return QItemModelBarDataProxy__MultiMatchBehavior(C.QItemModelBarDataProxy_MultiMatchBehavior(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QItemModelBarDataProxy) ColumnRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelBarDataProxy_ColumnRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelBarDataProxy) RotationRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelBarDataProxy_RotationRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelBarDataProxy) RowRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelBarDataProxy_RowRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelBarDataProxy) ValueRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelBarDataProxy_ValueRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelBarDataProxy) ColumnRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelBarDataProxy_ColumnRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelBarDataProxy) ColumnRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelBarDataProxy_ColumnRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelBarDataProxy) RotationRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelBarDataProxy_RotationRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelBarDataProxy) RotationRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelBarDataProxy_RotationRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelBarDataProxy) RowRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelBarDataProxy_RowRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelBarDataProxy) RowRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelBarDataProxy_RowRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelBarDataProxy) ValueRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelBarDataProxy_ValueRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelBarDataProxy) ValueRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelBarDataProxy_ValueRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelBarDataProxy) ColumnCategories() []string {
-	if ptr.Pointer() != nil {
-		return strings.Split(cGoUnpackString(C.QItemModelBarDataProxy_ColumnCategories(ptr.Pointer())), "|")
-	}
-	return make([]string, 0)
-}
-
-func (ptr *QItemModelBarDataProxy) RowCategories() []string {
-	if ptr.Pointer() != nil {
-		return strings.Split(cGoUnpackString(C.QItemModelBarDataProxy_RowCategories(ptr.Pointer())), "|")
-	}
-	return make([]string, 0)
-}
-
-func (ptr *QItemModelBarDataProxy) AutoColumnCategories() bool {
-	if ptr.Pointer() != nil {
-		return C.QItemModelBarDataProxy_AutoColumnCategories(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QItemModelBarDataProxy) AutoRowCategories() bool {
-	if ptr.Pointer() != nil {
-		return C.QItemModelBarDataProxy_AutoRowCategories(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QItemModelBarDataProxy) UseModelCategories() bool {
-	if ptr.Pointer() != nil {
-		return C.QItemModelBarDataProxy_UseModelCategories(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQItemModelBarDataProxy_MetaObject
-func callbackQItemModelBarDataProxy_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQItemModelBarDataProxyFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QItemModelBarDataProxy) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QItemModelBarDataProxy) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QItemModelBarDataProxy) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QItemModelBarDataProxy_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QItemModelBarDataProxy) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QItemModelBarDataProxy_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QItemModelScatterDataProxy struct {
@@ -15790,6 +12635,10 @@ func NewQItemModelScatterDataProxyFromPointer(ptr unsafe.Pointer) (n *QItemModel
 	n.SetPointer(ptr)
 	return
 }
+func NewQItemModelScatterDataProxy(parent core.QObject_ITF) *QItemModelScatterDataProxy {
+	return NewQItemModelScatterDataProxyFromPointer(C.QItemModelScatterDataProxy_NewQItemModelScatterDataProxy(core.PointerFromQObject(parent)))
+}
+
 func NewQItemModelScatterDataProxy2(itemModel core.QAbstractItemModel_ITF, parent core.QObject_ITF) *QItemModelScatterDataProxy {
 	return NewQItemModelScatterDataProxyFromPointer(C.QItemModelScatterDataProxy_NewQItemModelScatterDataProxy2(core.PointerFromQAbstractItemModel(itemModel), core.PointerFromQObject(parent)))
 }
@@ -15837,70 +12686,21 @@ func NewQItemModelScatterDataProxy4(itemModel core.QAbstractItemModel_ITF, xPosR
 	return NewQItemModelScatterDataProxyFromPointer(C.QItemModelScatterDataProxy_NewQItemModelScatterDataProxy4(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: xPosRoleC, len: C.longlong(len(xPosRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, C.struct_QtDataVisualization_PackedString{data: zPosRoleC, len: C.longlong(len(zPosRole))}, C.struct_QtDataVisualization_PackedString{data: rotationRoleC, len: C.longlong(len(rotationRole))}, core.PointerFromQObject(parent)))
 }
 
-func NewQItemModelScatterDataProxy(parent core.QObject_ITF) *QItemModelScatterDataProxy {
-	return NewQItemModelScatterDataProxyFromPointer(C.QItemModelScatterDataProxy_NewQItemModelScatterDataProxy(core.PointerFromQObject(parent)))
-}
-
-func QItemModelScatterDataProxy_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QItemModelScatterDataProxy) ItemModel() *core.QAbstractItemModel {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQAbstractItemModelFromPointer(C.QItemModelScatterDataProxy_ItemModel(ptr.Pointer()))
+		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
+			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
+		}
+		return tmpValue
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelScatterDataProxy_QItemModelScatterDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QItemModelScatterDataProxy) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelScatterDataProxy_QItemModelScatterDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QItemModelScatterDataProxy_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelScatterDataProxy_QItemModelScatterDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QItemModelScatterDataProxy) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelScatterDataProxy_QItemModelScatterDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
+	return nil
 }
 
 //export callbackQItemModelScatterDataProxy_ItemModelChanged
 func callbackQItemModelScatterDataProxy_ItemModelChanged(ptr unsafe.Pointer, itemModel unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "itemModelChanged"); signal != nil {
-		signal.(func(*core.QAbstractItemModel))(core.NewQAbstractItemModelFromPointer(itemModel))
+		(*(*func(*core.QAbstractItemModel))(signal))(core.NewQAbstractItemModelFromPointer(itemModel))
 	}
 
 }
@@ -15913,12 +12713,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectItemModelChanged(f func(itemModel 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemModelChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", func(itemModel *core.QAbstractItemModel) {
-				signal.(func(*core.QAbstractItemModel))(itemModel)
+			f := func(itemModel *core.QAbstractItemModel) {
+				(*(*func(*core.QAbstractItemModel))(signal))(itemModel)
 				f(itemModel)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -15962,10 +12763,17 @@ func (ptr *QItemModelScatterDataProxy) Remap(xPosRole string, yPosRole string, z
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) RotationRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelScatterDataProxy_RotationRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelScatterDataProxy_RotationRoleChanged
 func callbackQItemModelScatterDataProxy_RotationRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "rotationRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -15978,12 +12786,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectRotationRoleChanged(f func(role st
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rotationRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rotationRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rotationRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16006,10 +12815,19 @@ func (ptr *QItemModelScatterDataProxy) RotationRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) RotationRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelScatterDataProxy_RotationRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelScatterDataProxy_RotationRolePatternChanged
 func callbackQItemModelScatterDataProxy_RotationRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "rotationRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -16022,12 +12840,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectRotationRolePatternChanged(f func(
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rotationRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rotationRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rotationRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16045,10 +12864,17 @@ func (ptr *QItemModelScatterDataProxy) RotationRolePatternChanged(pattern core.Q
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) RotationRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelScatterDataProxy_RotationRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelScatterDataProxy_RotationRoleReplaceChanged
 func callbackQItemModelScatterDataProxy_RotationRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "rotationRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -16061,12 +12887,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectRotationRoleReplaceChanged(f func(
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rotationRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rotationRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rotationRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rotationRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16207,10 +13034,17 @@ func (ptr *QItemModelScatterDataProxy) SetZPosRoleReplace(replace string) {
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) XPosRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelScatterDataProxy_XPosRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelScatterDataProxy_XPosRoleChanged
 func callbackQItemModelScatterDataProxy_XPosRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "xPosRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -16223,12 +13057,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectXPosRoleChanged(f func(role string
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "xPosRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "xPosRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "xPosRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16251,10 +13086,19 @@ func (ptr *QItemModelScatterDataProxy) XPosRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) XPosRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelScatterDataProxy_XPosRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelScatterDataProxy_XPosRolePatternChanged
 func callbackQItemModelScatterDataProxy_XPosRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "xPosRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -16267,12 +13111,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectXPosRolePatternChanged(f func(patt
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "xPosRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "xPosRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "xPosRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16290,10 +13135,17 @@ func (ptr *QItemModelScatterDataProxy) XPosRolePatternChanged(pattern core.QRegE
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) XPosRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelScatterDataProxy_XPosRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelScatterDataProxy_XPosRoleReplaceChanged
 func callbackQItemModelScatterDataProxy_XPosRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "xPosRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -16306,12 +13158,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectXPosRoleReplaceChanged(f func(repl
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "xPosRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "xPosRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "xPosRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16334,10 +13187,17 @@ func (ptr *QItemModelScatterDataProxy) XPosRoleReplaceChanged(replace string) {
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) YPosRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelScatterDataProxy_YPosRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelScatterDataProxy_YPosRoleChanged
 func callbackQItemModelScatterDataProxy_YPosRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "yPosRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -16350,12 +13210,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectYPosRoleChanged(f func(role string
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "yPosRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "yPosRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "yPosRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16378,10 +13239,19 @@ func (ptr *QItemModelScatterDataProxy) YPosRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) YPosRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelScatterDataProxy_YPosRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelScatterDataProxy_YPosRolePatternChanged
 func callbackQItemModelScatterDataProxy_YPosRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "yPosRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -16394,12 +13264,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectYPosRolePatternChanged(f func(patt
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "yPosRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "yPosRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "yPosRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16417,10 +13288,17 @@ func (ptr *QItemModelScatterDataProxy) YPosRolePatternChanged(pattern core.QRegE
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) YPosRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelScatterDataProxy_YPosRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelScatterDataProxy_YPosRoleReplaceChanged
 func callbackQItemModelScatterDataProxy_YPosRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "yPosRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -16433,12 +13311,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectYPosRoleReplaceChanged(f func(repl
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "yPosRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "yPosRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "yPosRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16461,10 +13340,17 @@ func (ptr *QItemModelScatterDataProxy) YPosRoleReplaceChanged(replace string) {
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) ZPosRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelScatterDataProxy_ZPosRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelScatterDataProxy_ZPosRoleChanged
 func callbackQItemModelScatterDataProxy_ZPosRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "zPosRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -16477,12 +13363,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectZPosRoleChanged(f func(role string
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "zPosRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "zPosRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "zPosRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16505,10 +13392,19 @@ func (ptr *QItemModelScatterDataProxy) ZPosRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) ZPosRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelScatterDataProxy_ZPosRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelScatterDataProxy_ZPosRolePatternChanged
 func callbackQItemModelScatterDataProxy_ZPosRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "zPosRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -16521,12 +13417,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectZPosRolePatternChanged(f func(patt
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "zPosRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "zPosRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "zPosRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16544,10 +13441,17 @@ func (ptr *QItemModelScatterDataProxy) ZPosRolePatternChanged(pattern core.QRegE
 	}
 }
 
+func (ptr *QItemModelScatterDataProxy) ZPosRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelScatterDataProxy_ZPosRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelScatterDataProxy_ZPosRoleReplaceChanged
 func callbackQItemModelScatterDataProxy_ZPosRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "zPosRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -16560,12 +13464,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectZPosRoleReplaceChanged(f func(repl
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "zPosRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "zPosRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "zPosRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16591,7 +13496,7 @@ func (ptr *QItemModelScatterDataProxy) ZPosRoleReplaceChanged(replace string) {
 //export callbackQItemModelScatterDataProxy_DestroyQItemModelScatterDataProxy
 func callbackQItemModelScatterDataProxy_DestroyQItemModelScatterDataProxy(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QItemModelScatterDataProxy"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQItemModelScatterDataProxyFromPointer(ptr).DestroyQItemModelScatterDataProxyDefault()
 	}
@@ -16601,12 +13506,13 @@ func (ptr *QItemModelScatterDataProxy) ConnectDestroyQItemModelScatterDataProxy(
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QItemModelScatterDataProxy"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QItemModelScatterDataProxy", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QItemModelScatterDataProxy", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QItemModelScatterDataProxy", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QItemModelScatterDataProxy", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -16632,153 +13538,6 @@ func (ptr *QItemModelScatterDataProxy) DestroyQItemModelScatterDataProxyDefault(
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QItemModelScatterDataProxy) ItemModel() *core.QAbstractItemModel {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQAbstractItemModelFromPointer(C.QItemModelScatterDataProxy_ItemModel(ptr.Pointer()))
-		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
-			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
-		}
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelScatterDataProxy) RotationRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelScatterDataProxy_RotationRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelScatterDataProxy) XPosRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelScatterDataProxy_XPosRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelScatterDataProxy) YPosRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelScatterDataProxy_YPosRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelScatterDataProxy) ZPosRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelScatterDataProxy_ZPosRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelScatterDataProxy) RotationRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelScatterDataProxy_RotationRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelScatterDataProxy) RotationRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelScatterDataProxy_RotationRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelScatterDataProxy) XPosRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelScatterDataProxy_XPosRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelScatterDataProxy) XPosRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelScatterDataProxy_XPosRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelScatterDataProxy) YPosRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelScatterDataProxy_YPosRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelScatterDataProxy) YPosRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelScatterDataProxy_YPosRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelScatterDataProxy) ZPosRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelScatterDataProxy_ZPosRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelScatterDataProxy) ZPosRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelScatterDataProxy_ZPosRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-//export callbackQItemModelScatterDataProxy_MetaObject
-func callbackQItemModelScatterDataProxy_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQItemModelScatterDataProxyFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QItemModelScatterDataProxy) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QItemModelScatterDataProxy) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QItemModelScatterDataProxy) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QItemModelScatterDataProxy_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QItemModelScatterDataProxy) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QItemModelScatterDataProxy_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QItemModelSurfaceDataProxy struct {
@@ -16830,8 +13589,40 @@ const (
 	QItemModelSurfaceDataProxy__MMBCumulativeY QItemModelSurfaceDataProxy__MultiMatchBehavior = QItemModelSurfaceDataProxy__MultiMatchBehavior(3)
 )
 
+func NewQItemModelSurfaceDataProxy(parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
+	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy(core.PointerFromQObject(parent)))
+}
+
 func NewQItemModelSurfaceDataProxy2(itemModel core.QAbstractItemModel_ITF, parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
 	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy2(core.PointerFromQAbstractItemModel(itemModel), core.PointerFromQObject(parent)))
+}
+
+func NewQItemModelSurfaceDataProxy3(itemModel core.QAbstractItemModel_ITF, yPosRole string, parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
+	var yPosRoleC *C.char
+	if yPosRole != "" {
+		yPosRoleC = C.CString(yPosRole)
+		defer C.free(unsafe.Pointer(yPosRoleC))
+	}
+	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy3(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, core.PointerFromQObject(parent)))
+}
+
+func NewQItemModelSurfaceDataProxy4(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, yPosRole string, parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
+	var rowRoleC *C.char
+	if rowRole != "" {
+		rowRoleC = C.CString(rowRole)
+		defer C.free(unsafe.Pointer(rowRoleC))
+	}
+	var columnRoleC *C.char
+	if columnRole != "" {
+		columnRoleC = C.CString(columnRole)
+		defer C.free(unsafe.Pointer(columnRoleC))
+	}
+	var yPosRoleC *C.char
+	if yPosRole != "" {
+		yPosRoleC = C.CString(yPosRole)
+		defer C.free(unsafe.Pointer(yPosRoleC))
+	}
+	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy4(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, core.PointerFromQObject(parent)))
 }
 
 func NewQItemModelSurfaceDataProxy5(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, xPosRole string, yPosRole string, zPosRole string, parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
@@ -16863,6 +13654,29 @@ func NewQItemModelSurfaceDataProxy5(itemModel core.QAbstractItemModel_ITF, rowRo
 	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy5(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: xPosRoleC, len: C.longlong(len(xPosRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, C.struct_QtDataVisualization_PackedString{data: zPosRoleC, len: C.longlong(len(zPosRole))}, core.PointerFromQObject(parent)))
 }
 
+func NewQItemModelSurfaceDataProxy6(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, yPosRole string, rowCategories []string, columnCategories []string, parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
+	var rowRoleC *C.char
+	if rowRole != "" {
+		rowRoleC = C.CString(rowRole)
+		defer C.free(unsafe.Pointer(rowRoleC))
+	}
+	var columnRoleC *C.char
+	if columnRole != "" {
+		columnRoleC = C.CString(columnRole)
+		defer C.free(unsafe.Pointer(columnRoleC))
+	}
+	var yPosRoleC *C.char
+	if yPosRole != "" {
+		yPosRoleC = C.CString(yPosRole)
+		defer C.free(unsafe.Pointer(yPosRoleC))
+	}
+	rowCategoriesC := C.CString(strings.Join(rowCategories, "¡¦!"))
+	defer C.free(unsafe.Pointer(rowCategoriesC))
+	columnCategoriesC := C.CString(strings.Join(columnCategories, "¡¦!"))
+	defer C.free(unsafe.Pointer(columnCategoriesC))
+	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy6(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "¡¦!")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "¡¦!")))}, core.PointerFromQObject(parent)))
+}
+
 func NewQItemModelSurfaceDataProxy7(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, xPosRole string, yPosRole string, zPosRole string, rowCategories []string, columnCategories []string, parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
 	var rowRoleC *C.char
 	if rowRole != "" {
@@ -16889,152 +13703,24 @@ func NewQItemModelSurfaceDataProxy7(itemModel core.QAbstractItemModel_ITF, rowRo
 		zPosRoleC = C.CString(zPosRole)
 		defer C.free(unsafe.Pointer(zPosRoleC))
 	}
-	rowCategoriesC := C.CString(strings.Join(rowCategories, "|"))
+	rowCategoriesC := C.CString(strings.Join(rowCategories, "¡¦!"))
 	defer C.free(unsafe.Pointer(rowCategoriesC))
-	columnCategoriesC := C.CString(strings.Join(columnCategories, "|"))
+	columnCategoriesC := C.CString(strings.Join(columnCategories, "¡¦!"))
 	defer C.free(unsafe.Pointer(columnCategoriesC))
-	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy7(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: xPosRoleC, len: C.longlong(len(xPosRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, C.struct_QtDataVisualization_PackedString{data: zPosRoleC, len: C.longlong(len(zPosRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "|")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "|")))}, core.PointerFromQObject(parent)))
+	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy7(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: xPosRoleC, len: C.longlong(len(xPosRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, C.struct_QtDataVisualization_PackedString{data: zPosRoleC, len: C.longlong(len(zPosRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "¡¦!")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "¡¦!")))}, core.PointerFromQObject(parent)))
 }
 
-func NewQItemModelSurfaceDataProxy4(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, yPosRole string, parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
-	var rowRoleC *C.char
-	if rowRole != "" {
-		rowRoleC = C.CString(rowRole)
-		defer C.free(unsafe.Pointer(rowRoleC))
-	}
-	var columnRoleC *C.char
-	if columnRole != "" {
-		columnRoleC = C.CString(columnRole)
-		defer C.free(unsafe.Pointer(columnRoleC))
-	}
-	var yPosRoleC *C.char
-	if yPosRole != "" {
-		yPosRoleC = C.CString(yPosRole)
-		defer C.free(unsafe.Pointer(yPosRoleC))
-	}
-	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy4(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, core.PointerFromQObject(parent)))
-}
-
-func NewQItemModelSurfaceDataProxy6(itemModel core.QAbstractItemModel_ITF, rowRole string, columnRole string, yPosRole string, rowCategories []string, columnCategories []string, parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
-	var rowRoleC *C.char
-	if rowRole != "" {
-		rowRoleC = C.CString(rowRole)
-		defer C.free(unsafe.Pointer(rowRoleC))
-	}
-	var columnRoleC *C.char
-	if columnRole != "" {
-		columnRoleC = C.CString(columnRole)
-		defer C.free(unsafe.Pointer(columnRoleC))
-	}
-	var yPosRoleC *C.char
-	if yPosRole != "" {
-		yPosRoleC = C.CString(yPosRole)
-		defer C.free(unsafe.Pointer(yPosRoleC))
-	}
-	rowCategoriesC := C.CString(strings.Join(rowCategories, "|"))
-	defer C.free(unsafe.Pointer(rowCategoriesC))
-	columnCategoriesC := C.CString(strings.Join(columnCategories, "|"))
-	defer C.free(unsafe.Pointer(columnCategoriesC))
-	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy6(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "|")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "|")))}, core.PointerFromQObject(parent)))
-}
-
-func NewQItemModelSurfaceDataProxy3(itemModel core.QAbstractItemModel_ITF, yPosRole string, parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
-	var yPosRoleC *C.char
-	if yPosRole != "" {
-		yPosRoleC = C.CString(yPosRole)
-		defer C.free(unsafe.Pointer(yPosRoleC))
-	}
-	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy3(core.PointerFromQAbstractItemModel(itemModel), C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, core.PointerFromQObject(parent)))
-}
-
-func NewQItemModelSurfaceDataProxy(parent core.QObject_ITF) *QItemModelSurfaceDataProxy {
-	return NewQItemModelSurfaceDataProxyFromPointer(C.QItemModelSurfaceDataProxy_NewQItemModelSurfaceDataProxy(core.PointerFromQObject(parent)))
-}
-
-func QItemModelSurfaceDataProxy_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelSurfaceDataProxy_QItemModelSurfaceDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QItemModelSurfaceDataProxy) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelSurfaceDataProxy_QItemModelSurfaceDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QItemModelSurfaceDataProxy_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelSurfaceDataProxy_QItemModelSurfaceDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QItemModelSurfaceDataProxy) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QItemModelSurfaceDataProxy_QItemModelSurfaceDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ColumnCategoryIndex(category string) int {
+func (ptr *QItemModelSurfaceDataProxy) AutoColumnCategories() bool {
 	if ptr.Pointer() != nil {
-		var categoryC *C.char
-		if category != "" {
-			categoryC = C.CString(category)
-			defer C.free(unsafe.Pointer(categoryC))
-		}
-		return int(int32(C.QItemModelSurfaceDataProxy_ColumnCategoryIndex(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoryC, len: C.longlong(len(category))})))
+		return int8(C.QItemModelSurfaceDataProxy_AutoColumnCategories(ptr.Pointer())) != 0
 	}
-	return 0
-}
-
-func (ptr *QItemModelSurfaceDataProxy) RowCategoryIndex(category string) int {
-	if ptr.Pointer() != nil {
-		var categoryC *C.char
-		if category != "" {
-			categoryC = C.CString(category)
-			defer C.free(unsafe.Pointer(categoryC))
-		}
-		return int(int32(C.QItemModelSurfaceDataProxy_RowCategoryIndex(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoryC, len: C.longlong(len(category))})))
-	}
-	return 0
+	return false
 }
 
 //export callbackQItemModelSurfaceDataProxy_AutoColumnCategoriesChanged
 func callbackQItemModelSurfaceDataProxy_AutoColumnCategoriesChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "autoColumnCategoriesChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -17047,12 +13733,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectAutoColumnCategoriesChanged(f func
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "autoColumnCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "autoColumnCategoriesChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "autoColumnCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "autoColumnCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "autoColumnCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17070,10 +13757,17 @@ func (ptr *QItemModelSurfaceDataProxy) AutoColumnCategoriesChanged(enable bool) 
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) AutoRowCategories() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QItemModelSurfaceDataProxy_AutoRowCategories(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQItemModelSurfaceDataProxy_AutoRowCategoriesChanged
 func callbackQItemModelSurfaceDataProxy_AutoRowCategoriesChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "autoRowCategoriesChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -17086,12 +13780,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectAutoRowCategoriesChanged(f func(en
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "autoRowCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "autoRowCategoriesChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "autoRowCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "autoRowCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "autoRowCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17109,10 +13804,17 @@ func (ptr *QItemModelSurfaceDataProxy) AutoRowCategoriesChanged(enable bool) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) ColumnCategories() []string {
+	if ptr.Pointer() != nil {
+		return unpackStringList(cGoUnpackString(C.QItemModelSurfaceDataProxy_ColumnCategories(ptr.Pointer())))
+	}
+	return make([]string, 0)
+}
+
 //export callbackQItemModelSurfaceDataProxy_ColumnCategoriesChanged
 func callbackQItemModelSurfaceDataProxy_ColumnCategoriesChanged(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "columnCategoriesChanged"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -17125,12 +13827,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectColumnCategoriesChanged(f func()) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnCategoriesChanged", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17148,10 +13851,29 @@ func (ptr *QItemModelSurfaceDataProxy) ColumnCategoriesChanged() {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) ColumnCategoryIndex(category string) int {
+	if ptr.Pointer() != nil {
+		var categoryC *C.char
+		if category != "" {
+			categoryC = C.CString(category)
+			defer C.free(unsafe.Pointer(categoryC))
+		}
+		return int(int32(C.QItemModelSurfaceDataProxy_ColumnCategoryIndex(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoryC, len: C.longlong(len(category))})))
+	}
+	return 0
+}
+
+func (ptr *QItemModelSurfaceDataProxy) ColumnRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_ColumnRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_ColumnRoleChanged
 func callbackQItemModelSurfaceDataProxy_ColumnRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "columnRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -17164,12 +13886,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectColumnRoleChanged(f func(role stri
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17192,10 +13915,19 @@ func (ptr *QItemModelSurfaceDataProxy) ColumnRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) ColumnRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_ColumnRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelSurfaceDataProxy_ColumnRolePatternChanged
 func callbackQItemModelSurfaceDataProxy_ColumnRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "columnRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -17208,12 +13940,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectColumnRolePatternChanged(f func(pa
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17231,10 +13964,17 @@ func (ptr *QItemModelSurfaceDataProxy) ColumnRolePatternChanged(pattern core.QRe
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) ColumnRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_ColumnRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_ColumnRoleReplaceChanged
 func callbackQItemModelSurfaceDataProxy_ColumnRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "columnRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -17247,12 +13987,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectColumnRoleReplaceChanged(f func(re
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17275,10 +14016,21 @@ func (ptr *QItemModelSurfaceDataProxy) ColumnRoleReplaceChanged(replace string) 
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) ItemModel() *core.QAbstractItemModel {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQAbstractItemModelFromPointer(C.QItemModelSurfaceDataProxy_ItemModel(ptr.Pointer()))
+		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
+			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
+		}
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelSurfaceDataProxy_ItemModelChanged
 func callbackQItemModelSurfaceDataProxy_ItemModelChanged(ptr unsafe.Pointer, itemModel unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "itemModelChanged"); signal != nil {
-		signal.(func(*core.QAbstractItemModel))(core.NewQAbstractItemModelFromPointer(itemModel))
+		(*(*func(*core.QAbstractItemModel))(signal))(core.NewQAbstractItemModelFromPointer(itemModel))
 	}
 
 }
@@ -17291,12 +14043,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectItemModelChanged(f func(itemModel 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemModelChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", func(itemModel *core.QAbstractItemModel) {
-				signal.(func(*core.QAbstractItemModel))(itemModel)
+			f := func(itemModel *core.QAbstractItemModel) {
+				(*(*func(*core.QAbstractItemModel))(signal))(itemModel)
 				f(itemModel)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemModelChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17314,10 +14067,17 @@ func (ptr *QItemModelSurfaceDataProxy) ItemModelChanged(itemModel core.QAbstract
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) MultiMatchBehavior() QItemModelSurfaceDataProxy__MultiMatchBehavior {
+	if ptr.Pointer() != nil {
+		return QItemModelSurfaceDataProxy__MultiMatchBehavior(C.QItemModelSurfaceDataProxy_MultiMatchBehavior(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQItemModelSurfaceDataProxy_MultiMatchBehaviorChanged
 func callbackQItemModelSurfaceDataProxy_MultiMatchBehaviorChanged(ptr unsafe.Pointer, behavior C.longlong) {
 	if signal := qt.GetSignal(ptr, "multiMatchBehaviorChanged"); signal != nil {
-		signal.(func(QItemModelSurfaceDataProxy__MultiMatchBehavior))(QItemModelSurfaceDataProxy__MultiMatchBehavior(behavior))
+		(*(*func(QItemModelSurfaceDataProxy__MultiMatchBehavior))(signal))(QItemModelSurfaceDataProxy__MultiMatchBehavior(behavior))
 	}
 
 }
@@ -17330,12 +14090,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectMultiMatchBehaviorChanged(f func(b
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "multiMatchBehaviorChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "multiMatchBehaviorChanged", func(behavior QItemModelSurfaceDataProxy__MultiMatchBehavior) {
-				signal.(func(QItemModelSurfaceDataProxy__MultiMatchBehavior))(behavior)
+			f := func(behavior QItemModelSurfaceDataProxy__MultiMatchBehavior) {
+				(*(*func(QItemModelSurfaceDataProxy__MultiMatchBehavior))(signal))(behavior)
 				f(behavior)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "multiMatchBehaviorChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "multiMatchBehaviorChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "multiMatchBehaviorChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17380,18 +14141,25 @@ func (ptr *QItemModelSurfaceDataProxy) Remap(rowRole string, columnRole string, 
 			zPosRoleC = C.CString(zPosRole)
 			defer C.free(unsafe.Pointer(zPosRoleC))
 		}
-		rowCategoriesC := C.CString(strings.Join(rowCategories, "|"))
+		rowCategoriesC := C.CString(strings.Join(rowCategories, "¡¦!"))
 		defer C.free(unsafe.Pointer(rowCategoriesC))
-		columnCategoriesC := C.CString(strings.Join(columnCategories, "|"))
+		columnCategoriesC := C.CString(strings.Join(columnCategories, "¡¦!"))
 		defer C.free(unsafe.Pointer(columnCategoriesC))
-		C.QItemModelSurfaceDataProxy_Remap(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: xPosRoleC, len: C.longlong(len(xPosRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, C.struct_QtDataVisualization_PackedString{data: zPosRoleC, len: C.longlong(len(zPosRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "|")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "|")))})
+		C.QItemModelSurfaceDataProxy_Remap(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: rowRoleC, len: C.longlong(len(rowRole))}, C.struct_QtDataVisualization_PackedString{data: columnRoleC, len: C.longlong(len(columnRole))}, C.struct_QtDataVisualization_PackedString{data: xPosRoleC, len: C.longlong(len(xPosRole))}, C.struct_QtDataVisualization_PackedString{data: yPosRoleC, len: C.longlong(len(yPosRole))}, C.struct_QtDataVisualization_PackedString{data: zPosRoleC, len: C.longlong(len(zPosRole))}, C.struct_QtDataVisualization_PackedString{data: rowCategoriesC, len: C.longlong(len(strings.Join(rowCategories, "¡¦!")))}, C.struct_QtDataVisualization_PackedString{data: columnCategoriesC, len: C.longlong(len(strings.Join(columnCategories, "¡¦!")))})
 	}
+}
+
+func (ptr *QItemModelSurfaceDataProxy) RowCategories() []string {
+	if ptr.Pointer() != nil {
+		return unpackStringList(cGoUnpackString(C.QItemModelSurfaceDataProxy_RowCategories(ptr.Pointer())))
+	}
+	return make([]string, 0)
 }
 
 //export callbackQItemModelSurfaceDataProxy_RowCategoriesChanged
 func callbackQItemModelSurfaceDataProxy_RowCategoriesChanged(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "rowCategoriesChanged"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -17404,12 +14172,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectRowCategoriesChanged(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowCategoriesChanged", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17427,10 +14196,29 @@ func (ptr *QItemModelSurfaceDataProxy) RowCategoriesChanged() {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) RowCategoryIndex(category string) int {
+	if ptr.Pointer() != nil {
+		var categoryC *C.char
+		if category != "" {
+			categoryC = C.CString(category)
+			defer C.free(unsafe.Pointer(categoryC))
+		}
+		return int(int32(C.QItemModelSurfaceDataProxy_RowCategoryIndex(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoryC, len: C.longlong(len(category))})))
+	}
+	return 0
+}
+
+func (ptr *QItemModelSurfaceDataProxy) RowRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_RowRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_RowRoleChanged
 func callbackQItemModelSurfaceDataProxy_RowRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "rowRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -17443,12 +14231,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectRowRoleChanged(f func(role string)
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17471,10 +14260,19 @@ func (ptr *QItemModelSurfaceDataProxy) RowRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) RowRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_RowRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelSurfaceDataProxy_RowRolePatternChanged
 func callbackQItemModelSurfaceDataProxy_RowRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "rowRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -17487,12 +14285,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectRowRolePatternChanged(f func(patte
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17510,10 +14309,17 @@ func (ptr *QItemModelSurfaceDataProxy) RowRolePatternChanged(pattern core.QRegEx
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) RowRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_RowRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_RowRoleReplaceChanged
 func callbackQItemModelSurfaceDataProxy_RowRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "rowRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -17526,12 +14332,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectRowRoleReplaceChanged(f func(repla
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17568,9 +14375,9 @@ func (ptr *QItemModelSurfaceDataProxy) SetAutoRowCategories(enable bool) {
 
 func (ptr *QItemModelSurfaceDataProxy) SetColumnCategories(categories []string) {
 	if ptr.Pointer() != nil {
-		categoriesC := C.CString(strings.Join(categories, "|"))
+		categoriesC := C.CString(strings.Join(categories, "¡¦!"))
 		defer C.free(unsafe.Pointer(categoriesC))
-		C.QItemModelSurfaceDataProxy_SetColumnCategories(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoriesC, len: C.longlong(len(strings.Join(categories, "|")))})
+		C.QItemModelSurfaceDataProxy_SetColumnCategories(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoriesC, len: C.longlong(len(strings.Join(categories, "¡¦!")))})
 	}
 }
 
@@ -17616,9 +14423,9 @@ func (ptr *QItemModelSurfaceDataProxy) SetMultiMatchBehavior(behavior QItemModel
 
 func (ptr *QItemModelSurfaceDataProxy) SetRowCategories(categories []string) {
 	if ptr.Pointer() != nil {
-		categoriesC := C.CString(strings.Join(categories, "|"))
+		categoriesC := C.CString(strings.Join(categories, "¡¦!"))
 		defer C.free(unsafe.Pointer(categoriesC))
-		C.QItemModelSurfaceDataProxy_SetRowCategories(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoriesC, len: C.longlong(len(strings.Join(categories, "|")))})
+		C.QItemModelSurfaceDataProxy_SetRowCategories(ptr.Pointer(), C.struct_QtDataVisualization_PackedString{data: categoriesC, len: C.longlong(len(strings.Join(categories, "¡¦!")))})
 	}
 }
 
@@ -17740,10 +14547,17 @@ func (ptr *QItemModelSurfaceDataProxy) SetZPosRoleReplace(replace string) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) UseModelCategories() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QItemModelSurfaceDataProxy_UseModelCategories(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQItemModelSurfaceDataProxy_UseModelCategoriesChanged
 func callbackQItemModelSurfaceDataProxy_UseModelCategoriesChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "useModelCategoriesChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -17756,12 +14570,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectUseModelCategoriesChanged(f func(e
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "useModelCategoriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "useModelCategoriesChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "useModelCategoriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "useModelCategoriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "useModelCategoriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17779,10 +14594,17 @@ func (ptr *QItemModelSurfaceDataProxy) UseModelCategoriesChanged(enable bool) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) XPosRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_XPosRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_XPosRoleChanged
 func callbackQItemModelSurfaceDataProxy_XPosRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "xPosRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -17795,12 +14617,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectXPosRoleChanged(f func(role string
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "xPosRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "xPosRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "xPosRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17823,10 +14646,19 @@ func (ptr *QItemModelSurfaceDataProxy) XPosRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) XPosRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_XPosRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelSurfaceDataProxy_XPosRolePatternChanged
 func callbackQItemModelSurfaceDataProxy_XPosRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "xPosRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -17839,12 +14671,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectXPosRolePatternChanged(f func(patt
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "xPosRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "xPosRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "xPosRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17862,10 +14695,17 @@ func (ptr *QItemModelSurfaceDataProxy) XPosRolePatternChanged(pattern core.QRegE
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) XPosRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_XPosRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_XPosRoleReplaceChanged
 func callbackQItemModelSurfaceDataProxy_XPosRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "xPosRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -17878,12 +14718,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectXPosRoleReplaceChanged(f func(repl
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "xPosRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "xPosRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "xPosRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "xPosRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17906,10 +14747,17 @@ func (ptr *QItemModelSurfaceDataProxy) XPosRoleReplaceChanged(replace string) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) YPosRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_YPosRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_YPosRoleChanged
 func callbackQItemModelSurfaceDataProxy_YPosRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "yPosRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -17922,12 +14770,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectYPosRoleChanged(f func(role string
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "yPosRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "yPosRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "yPosRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17950,10 +14799,19 @@ func (ptr *QItemModelSurfaceDataProxy) YPosRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) YPosRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_YPosRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelSurfaceDataProxy_YPosRolePatternChanged
 func callbackQItemModelSurfaceDataProxy_YPosRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "yPosRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -17966,12 +14824,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectYPosRolePatternChanged(f func(patt
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "yPosRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "yPosRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "yPosRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -17989,10 +14848,17 @@ func (ptr *QItemModelSurfaceDataProxy) YPosRolePatternChanged(pattern core.QRegE
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) YPosRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_YPosRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_YPosRoleReplaceChanged
 func callbackQItemModelSurfaceDataProxy_YPosRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "yPosRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -18005,12 +14871,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectYPosRoleReplaceChanged(f func(repl
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "yPosRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "yPosRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "yPosRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "yPosRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18033,10 +14900,17 @@ func (ptr *QItemModelSurfaceDataProxy) YPosRoleReplaceChanged(replace string) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) ZPosRole() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_ZPosRole(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_ZPosRoleChanged
 func callbackQItemModelSurfaceDataProxy_ZPosRoleChanged(ptr unsafe.Pointer, role C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "zPosRoleChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(role))
+		(*(*func(string))(signal))(cGoUnpackString(role))
 	}
 
 }
@@ -18049,12 +14923,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectZPosRoleChanged(f func(role string
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "zPosRoleChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRoleChanged", func(role string) {
-				signal.(func(string))(role)
+			f := func(role string) {
+				(*(*func(string))(signal))(role)
 				f(role)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "zPosRoleChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRoleChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "zPosRoleChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18077,10 +14952,19 @@ func (ptr *QItemModelSurfaceDataProxy) ZPosRoleChanged(role string) {
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) ZPosRolePattern() *core.QRegExp {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_ZPosRolePattern(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQItemModelSurfaceDataProxy_ZPosRolePatternChanged
 func callbackQItemModelSurfaceDataProxy_ZPosRolePatternChanged(ptr unsafe.Pointer, pattern unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "zPosRolePatternChanged"); signal != nil {
-		signal.(func(*core.QRegExp))(core.NewQRegExpFromPointer(pattern))
+		(*(*func(*core.QRegExp))(signal))(core.NewQRegExpFromPointer(pattern))
 	}
 
 }
@@ -18093,12 +14977,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectZPosRolePatternChanged(f func(patt
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "zPosRolePatternChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRolePatternChanged", func(pattern *core.QRegExp) {
-				signal.(func(*core.QRegExp))(pattern)
+			f := func(pattern *core.QRegExp) {
+				(*(*func(*core.QRegExp))(signal))(pattern)
 				f(pattern)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "zPosRolePatternChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRolePatternChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "zPosRolePatternChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18116,10 +15001,17 @@ func (ptr *QItemModelSurfaceDataProxy) ZPosRolePatternChanged(pattern core.QRegE
 	}
 }
 
+func (ptr *QItemModelSurfaceDataProxy) ZPosRoleReplace() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QItemModelSurfaceDataProxy_ZPosRoleReplace(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQItemModelSurfaceDataProxy_ZPosRoleReplaceChanged
 func callbackQItemModelSurfaceDataProxy_ZPosRoleReplaceChanged(ptr unsafe.Pointer, replace C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "zPosRoleReplaceChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(replace))
+		(*(*func(string))(signal))(cGoUnpackString(replace))
 	}
 
 }
@@ -18132,12 +15024,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectZPosRoleReplaceChanged(f func(repl
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "zPosRoleReplaceChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRoleReplaceChanged", func(replace string) {
-				signal.(func(string))(replace)
+			f := func(replace string) {
+				(*(*func(string))(signal))(replace)
 				f(replace)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "zPosRoleReplaceChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "zPosRoleReplaceChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "zPosRoleReplaceChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18163,7 +15056,7 @@ func (ptr *QItemModelSurfaceDataProxy) ZPosRoleReplaceChanged(replace string) {
 //export callbackQItemModelSurfaceDataProxy_DestroyQItemModelSurfaceDataProxy
 func callbackQItemModelSurfaceDataProxy_DestroyQItemModelSurfaceDataProxy(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QItemModelSurfaceDataProxy"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQItemModelSurfaceDataProxyFromPointer(ptr).DestroyQItemModelSurfaceDataProxyDefault()
 	}
@@ -18173,12 +15066,13 @@ func (ptr *QItemModelSurfaceDataProxy) ConnectDestroyQItemModelSurfaceDataProxy(
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QItemModelSurfaceDataProxy"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QItemModelSurfaceDataProxy", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QItemModelSurfaceDataProxy", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QItemModelSurfaceDataProxy", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QItemModelSurfaceDataProxy", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18204,218 +15098,6 @@ func (ptr *QItemModelSurfaceDataProxy) DestroyQItemModelSurfaceDataProxyDefault(
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ItemModel() *core.QAbstractItemModel {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQAbstractItemModelFromPointer(C.QItemModelSurfaceDataProxy_ItemModel(ptr.Pointer()))
-		if !qt.ExistsSignal(tmpValue.Pointer(), "destroyed") {
-			tmpValue.ConnectDestroyed(func(*core.QObject) { tmpValue.SetPointer(nil) })
-		}
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelSurfaceDataProxy) MultiMatchBehavior() QItemModelSurfaceDataProxy__MultiMatchBehavior {
-	if ptr.Pointer() != nil {
-		return QItemModelSurfaceDataProxy__MultiMatchBehavior(C.QItemModelSurfaceDataProxy_MultiMatchBehavior(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ColumnRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_ColumnRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelSurfaceDataProxy) RowRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_RowRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelSurfaceDataProxy) XPosRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_XPosRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelSurfaceDataProxy) YPosRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_YPosRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ZPosRolePattern() *core.QRegExp {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQRegExpFromPointer(C.QItemModelSurfaceDataProxy_ZPosRolePattern(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QRegExp).DestroyQRegExp)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ColumnRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_ColumnRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ColumnRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_ColumnRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) RowRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_RowRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) RowRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_RowRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) XPosRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_XPosRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) XPosRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_XPosRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) YPosRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_YPosRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) YPosRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_YPosRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ZPosRole() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_ZPosRole(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ZPosRoleReplace() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QItemModelSurfaceDataProxy_ZPosRoleReplace(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ColumnCategories() []string {
-	if ptr.Pointer() != nil {
-		return strings.Split(cGoUnpackString(C.QItemModelSurfaceDataProxy_ColumnCategories(ptr.Pointer())), "|")
-	}
-	return make([]string, 0)
-}
-
-func (ptr *QItemModelSurfaceDataProxy) RowCategories() []string {
-	if ptr.Pointer() != nil {
-		return strings.Split(cGoUnpackString(C.QItemModelSurfaceDataProxy_RowCategories(ptr.Pointer())), "|")
-	}
-	return make([]string, 0)
-}
-
-func (ptr *QItemModelSurfaceDataProxy) AutoColumnCategories() bool {
-	if ptr.Pointer() != nil {
-		return C.QItemModelSurfaceDataProxy_AutoColumnCategories(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QItemModelSurfaceDataProxy) AutoRowCategories() bool {
-	if ptr.Pointer() != nil {
-		return C.QItemModelSurfaceDataProxy_AutoRowCategories(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QItemModelSurfaceDataProxy) UseModelCategories() bool {
-	if ptr.Pointer() != nil {
-		return C.QItemModelSurfaceDataProxy_UseModelCategories(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQItemModelSurfaceDataProxy_MetaObject
-func callbackQItemModelSurfaceDataProxy_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQItemModelSurfaceDataProxyFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QItemModelSurfaceDataProxy) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QItemModelSurfaceDataProxy) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QItemModelSurfaceDataProxy) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QItemModelSurfaceDataProxy_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QItemModelSurfaceDataProxy) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QItemModelSurfaceDataProxy_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QLogValue3DAxisFormatter struct {
@@ -18455,70 +15137,21 @@ func NewQLogValue3DAxisFormatterFromPointer(ptr unsafe.Pointer) (n *QLogValue3DA
 	n.SetPointer(ptr)
 	return
 }
-func NewQLogValue3DAxisFormatter(parent core.QObject_ITF) *QLogValue3DAxisFormatter {
-	return NewQLogValue3DAxisFormatterFromPointer(C.QLogValue3DAxisFormatter_NewQLogValue3DAxisFormatter(core.PointerFromQObject(parent)))
+func NewQLogValue3DAxisFormatter2(parent core.QObject_ITF) *QLogValue3DAxisFormatter {
+	return NewQLogValue3DAxisFormatterFromPointer(C.QLogValue3DAxisFormatter_NewQLogValue3DAxisFormatter2(core.PointerFromQObject(parent)))
 }
 
-func QLogValue3DAxisFormatter_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QLogValue3DAxisFormatter) AutoSubGrid() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QLogValue3DAxisFormatter_AutoSubGrid(ptr.Pointer())) != 0
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QLogValue3DAxisFormatter_QLogValue3DAxisFormatter_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QLogValue3DAxisFormatter) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QLogValue3DAxisFormatter_QLogValue3DAxisFormatter_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QLogValue3DAxisFormatter_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QLogValue3DAxisFormatter_QLogValue3DAxisFormatter_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QLogValue3DAxisFormatter) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QLogValue3DAxisFormatter_QLogValue3DAxisFormatter_TrUtf8(sC, cC, C.int(int32(n))))
+	return false
 }
 
 //export callbackQLogValue3DAxisFormatter_AutoSubGridChanged
 func callbackQLogValue3DAxisFormatter_AutoSubGridChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "autoSubGridChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -18531,12 +15164,13 @@ func (ptr *QLogValue3DAxisFormatter) ConnectAutoSubGridChanged(f func(enabled bo
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "autoSubGridChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "autoSubGridChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "autoSubGridChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "autoSubGridChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "autoSubGridChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18554,10 +15188,17 @@ func (ptr *QLogValue3DAxisFormatter) AutoSubGridChanged(enabled bool) {
 	}
 }
 
+func (ptr *QLogValue3DAxisFormatter) Base() float64 {
+	if ptr.Pointer() != nil {
+		return float64(C.QLogValue3DAxisFormatter_Base(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQLogValue3DAxisFormatter_BaseChanged
 func callbackQLogValue3DAxisFormatter_BaseChanged(ptr unsafe.Pointer, base C.double) {
 	if signal := qt.GetSignal(ptr, "baseChanged"); signal != nil {
-		signal.(func(float64))(float64(base))
+		(*(*func(float64))(signal))(float64(base))
 	}
 
 }
@@ -18570,12 +15211,13 @@ func (ptr *QLogValue3DAxisFormatter) ConnectBaseChanged(f func(base float64)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "baseChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "baseChanged", func(base float64) {
-				signal.(func(float64))(base)
+			f := func(base float64) {
+				(*(*func(float64))(signal))(base)
 				f(base)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "baseChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "baseChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "baseChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18611,10 +15253,17 @@ func (ptr *QLogValue3DAxisFormatter) SetShowEdgeLabels(enabled bool) {
 	}
 }
 
+func (ptr *QLogValue3DAxisFormatter) ShowEdgeLabels() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QLogValue3DAxisFormatter_ShowEdgeLabels(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQLogValue3DAxisFormatter_ShowEdgeLabelsChanged
 func callbackQLogValue3DAxisFormatter_ShowEdgeLabelsChanged(ptr unsafe.Pointer, enabled C.char) {
 	if signal := qt.GetSignal(ptr, "showEdgeLabelsChanged"); signal != nil {
-		signal.(func(bool))(int8(enabled) != 0)
+		(*(*func(bool))(signal))(int8(enabled) != 0)
 	}
 
 }
@@ -18627,12 +15276,13 @@ func (ptr *QLogValue3DAxisFormatter) ConnectShowEdgeLabelsChanged(f func(enabled
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "showEdgeLabelsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "showEdgeLabelsChanged", func(enabled bool) {
-				signal.(func(bool))(enabled)
+			f := func(enabled bool) {
+				(*(*func(bool))(signal))(enabled)
 				f(enabled)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "showEdgeLabelsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "showEdgeLabelsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "showEdgeLabelsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18653,7 +15303,7 @@ func (ptr *QLogValue3DAxisFormatter) ShowEdgeLabelsChanged(enabled bool) {
 //export callbackQLogValue3DAxisFormatter_DestroyQLogValue3DAxisFormatter
 func callbackQLogValue3DAxisFormatter_DestroyQLogValue3DAxisFormatter(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QLogValue3DAxisFormatter"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQLogValue3DAxisFormatterFromPointer(ptr).DestroyQLogValue3DAxisFormatterDefault()
 	}
@@ -18663,12 +15313,13 @@ func (ptr *QLogValue3DAxisFormatter) ConnectDestroyQLogValue3DAxisFormatter(f fu
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QLogValue3DAxisFormatter"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QLogValue3DAxisFormatter", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QLogValue3DAxisFormatter", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QLogValue3DAxisFormatter", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QLogValue3DAxisFormatter", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18684,7 +15335,6 @@ func (ptr *QLogValue3DAxisFormatter) DestroyQLogValue3DAxisFormatter() {
 	if ptr.Pointer() != nil {
 		C.QLogValue3DAxisFormatter_DestroyQLogValue3DAxisFormatter(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -18692,73 +15342,7 @@ func (ptr *QLogValue3DAxisFormatter) DestroyQLogValue3DAxisFormatterDefault() {
 	if ptr.Pointer() != nil {
 		C.QLogValue3DAxisFormatter_DestroyQLogValue3DAxisFormatterDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QLogValue3DAxisFormatter) AutoSubGrid() bool {
-	if ptr.Pointer() != nil {
-		return C.QLogValue3DAxisFormatter_AutoSubGrid(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QLogValue3DAxisFormatter) ShowEdgeLabels() bool {
-	if ptr.Pointer() != nil {
-		return C.QLogValue3DAxisFormatter_ShowEdgeLabels(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQLogValue3DAxisFormatter_MetaObject
-func callbackQLogValue3DAxisFormatter_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQLogValue3DAxisFormatterFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QLogValue3DAxisFormatter) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QLogValue3DAxisFormatter) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QLogValue3DAxisFormatter) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QLogValue3DAxisFormatter_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QLogValue3DAxisFormatter) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QLogValue3DAxisFormatter_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QLogValue3DAxisFormatter) Base() float64 {
-	if ptr.Pointer() != nil {
-		return float64(C.QLogValue3DAxisFormatter_Base(ptr.Pointer()))
-	}
-	return 0
 }
 
 type QScatter3DSeries struct {
@@ -18806,74 +15390,17 @@ func NewQScatter3DSeries2(dataProxy QScatterDataProxy_ITF, parent core.QObject_I
 	return NewQScatter3DSeriesFromPointer(C.QScatter3DSeries_NewQScatter3DSeries2(PointerFromQScatterDataProxy(dataProxy), core.PointerFromQObject(parent)))
 }
 
-func QScatter3DSeries_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
+func (ptr *QScatter3DSeries) DataProxy() *QScatterDataProxy {
+	if ptr.Pointer() != nil {
+		return NewQScatterDataProxyFromPointer(C.QScatter3DSeries_DataProxy(ptr.Pointer()))
 	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QScatter3DSeries_QScatter3DSeries_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QScatter3DSeries) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QScatter3DSeries_QScatter3DSeries_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QScatter3DSeries_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QScatter3DSeries_QScatter3DSeries_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QScatter3DSeries) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QScatter3DSeries_QScatter3DSeries_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func QScatter3DSeries_InvalidSelectionIndex() int {
-	return int(int32(C.QScatter3DSeries_QScatter3DSeries_InvalidSelectionIndex()))
-}
-
-func (ptr *QScatter3DSeries) InvalidSelectionIndex() int {
-	return int(int32(C.QScatter3DSeries_QScatter3DSeries_InvalidSelectionIndex()))
+	return nil
 }
 
 //export callbackQScatter3DSeries_DataProxyChanged
 func callbackQScatter3DSeries_DataProxyChanged(ptr unsafe.Pointer, proxy unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "dataProxyChanged"); signal != nil {
-		signal.(func(*QScatterDataProxy))(NewQScatterDataProxyFromPointer(proxy))
+		(*(*func(*QScatterDataProxy))(signal))(NewQScatterDataProxyFromPointer(proxy))
 	}
 
 }
@@ -18886,12 +15413,13 @@ func (ptr *QScatter3DSeries) ConnectDataProxyChanged(f func(proxy *QScatterDataP
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "dataProxyChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", func(proxy *QScatterDataProxy) {
-				signal.(func(*QScatterDataProxy))(proxy)
+			f := func(proxy *QScatterDataProxy) {
+				(*(*func(*QScatterDataProxy))(signal))(proxy)
 				f(proxy)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18909,10 +15437,25 @@ func (ptr *QScatter3DSeries) DataProxyChanged(proxy QScatterDataProxy_ITF) {
 	}
 }
 
+func QScatter3DSeries_InvalidSelectionIndex() int {
+	return int(int32(C.QScatter3DSeries_QScatter3DSeries_InvalidSelectionIndex()))
+}
+
+func (ptr *QScatter3DSeries) InvalidSelectionIndex() int {
+	return int(int32(C.QScatter3DSeries_QScatter3DSeries_InvalidSelectionIndex()))
+}
+
+func (ptr *QScatter3DSeries) ItemSize() float32 {
+	if ptr.Pointer() != nil {
+		return float32(C.QScatter3DSeries_ItemSize(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQScatter3DSeries_ItemSizeChanged
 func callbackQScatter3DSeries_ItemSizeChanged(ptr unsafe.Pointer, size C.float) {
 	if signal := qt.GetSignal(ptr, "itemSizeChanged"); signal != nil {
-		signal.(func(float32))(float32(size))
+		(*(*func(float32))(signal))(float32(size))
 	}
 
 }
@@ -18925,12 +15468,13 @@ func (ptr *QScatter3DSeries) ConnectItemSizeChanged(f func(size float32)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemSizeChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemSizeChanged", func(size float32) {
-				signal.(func(float32))(size)
+			f := func(size float32) {
+				(*(*func(float32))(signal))(size)
 				f(size)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemSizeChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemSizeChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemSizeChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -18948,10 +15492,17 @@ func (ptr *QScatter3DSeries) ItemSizeChanged(size float32) {
 	}
 }
 
+func (ptr *QScatter3DSeries) SelectedItem() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QScatter3DSeries_SelectedItem(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQScatter3DSeries_SelectedItemChanged
 func callbackQScatter3DSeries_SelectedItemChanged(ptr unsafe.Pointer, index C.int) {
 	if signal := qt.GetSignal(ptr, "selectedItemChanged"); signal != nil {
-		signal.(func(int))(int(int32(index)))
+		(*(*func(int))(signal))(int(int32(index)))
 	}
 
 }
@@ -18964,12 +15515,13 @@ func (ptr *QScatter3DSeries) ConnectSelectedItemChanged(f func(index int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "selectedItemChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectedItemChanged", func(index int) {
-				signal.(func(int))(index)
+			f := func(index int) {
+				(*(*func(int))(signal))(index)
 				f(index)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "selectedItemChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectedItemChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "selectedItemChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19008,7 +15560,7 @@ func (ptr *QScatter3DSeries) SetSelectedItem(index int) {
 //export callbackQScatter3DSeries_DestroyQScatter3DSeries
 func callbackQScatter3DSeries_DestroyQScatter3DSeries(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QScatter3DSeries"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQScatter3DSeriesFromPointer(ptr).DestroyQScatter3DSeriesDefault()
 	}
@@ -19018,12 +15570,13 @@ func (ptr *QScatter3DSeries) ConnectDestroyQScatter3DSeries(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QScatter3DSeries"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QScatter3DSeries", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QScatter3DSeries", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QScatter3DSeries", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QScatter3DSeries", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19039,7 +15592,6 @@ func (ptr *QScatter3DSeries) DestroyQScatter3DSeries() {
 	if ptr.Pointer() != nil {
 		C.QScatter3DSeries_DestroyQScatter3DSeries(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -19047,73 +15599,7 @@ func (ptr *QScatter3DSeries) DestroyQScatter3DSeriesDefault() {
 	if ptr.Pointer() != nil {
 		C.QScatter3DSeries_DestroyQScatter3DSeriesDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QScatter3DSeries) DataProxy() *QScatterDataProxy {
-	if ptr.Pointer() != nil {
-		return NewQScatterDataProxyFromPointer(C.QScatter3DSeries_DataProxy(ptr.Pointer()))
-	}
-	return nil
-}
-
-//export callbackQScatter3DSeries_MetaObject
-func callbackQScatter3DSeries_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQScatter3DSeriesFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QScatter3DSeries) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QScatter3DSeries) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QScatter3DSeries) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QScatter3DSeries_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QScatter3DSeries) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QScatter3DSeries_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QScatter3DSeries) ItemSize() float32 {
-	if ptr.Pointer() != nil {
-		return float32(C.QScatter3DSeries_ItemSize(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QScatter3DSeries) SelectedItem() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QScatter3DSeries_SelectedItem(ptr.Pointer())))
-	}
-	return 0
 }
 
 type QScatterDataItem struct {
@@ -19159,12 +15645,6 @@ func NewQScatterDataItem() *QScatterDataItem {
 	return tmpValue
 }
 
-func NewQScatterDataItem4(other QScatterDataItem_ITF) *QScatterDataItem {
-	tmpValue := NewQScatterDataItemFromPointer(C.QScatterDataItem_NewQScatterDataItem4(PointerFromQScatterDataItem(other)))
-	runtime.SetFinalizer(tmpValue, (*QScatterDataItem).DestroyQScatterDataItem)
-	return tmpValue
-}
-
 func NewQScatterDataItem2(position gui.QVector3D_ITF) *QScatterDataItem {
 	tmpValue := NewQScatterDataItemFromPointer(C.QScatterDataItem_NewQScatterDataItem2(gui.PointerFromQVector3D(position)))
 	runtime.SetFinalizer(tmpValue, (*QScatterDataItem).DestroyQScatterDataItem)
@@ -19175,6 +15655,30 @@ func NewQScatterDataItem3(position gui.QVector3D_ITF, rotation gui.QQuaternion_I
 	tmpValue := NewQScatterDataItemFromPointer(C.QScatterDataItem_NewQScatterDataItem3(gui.PointerFromQVector3D(position), gui.PointerFromQQuaternion(rotation)))
 	runtime.SetFinalizer(tmpValue, (*QScatterDataItem).DestroyQScatterDataItem)
 	return tmpValue
+}
+
+func NewQScatterDataItem4(other QScatterDataItem_ITF) *QScatterDataItem {
+	tmpValue := NewQScatterDataItemFromPointer(C.QScatterDataItem_NewQScatterDataItem4(PointerFromQScatterDataItem(other)))
+	runtime.SetFinalizer(tmpValue, (*QScatterDataItem).DestroyQScatterDataItem)
+	return tmpValue
+}
+
+func (ptr *QScatterDataItem) Position() *gui.QVector3D {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQVector3DFromPointer(C.QScatterDataItem_Position(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
+		return tmpValue
+	}
+	return nil
+}
+
+func (ptr *QScatterDataItem) Rotation() *gui.QQuaternion {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQQuaternionFromPointer(C.QScatterDataItem_Rotation(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QQuaternion).DestroyQQuaternion)
+		return tmpValue
+	}
+	return nil
 }
 
 func (ptr *QScatterDataItem) SetPosition(pos gui.QVector3D_ITF) {
@@ -19207,32 +15711,6 @@ func (ptr *QScatterDataItem) SetZ(value float32) {
 	}
 }
 
-func (ptr *QScatterDataItem) DestroyQScatterDataItem() {
-	if ptr.Pointer() != nil {
-		C.QScatterDataItem_DestroyQScatterDataItem(ptr.Pointer())
-		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
-	}
-}
-
-func (ptr *QScatterDataItem) Rotation() *gui.QQuaternion {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQQuaternionFromPointer(C.QScatterDataItem_Rotation(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QQuaternion).DestroyQQuaternion)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QScatterDataItem) Position() *gui.QVector3D {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.QScatterDataItem_Position(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
-	}
-	return nil
-}
-
 func (ptr *QScatterDataItem) X() float32 {
 	if ptr.Pointer() != nil {
 		return float32(C.QScatterDataItem_X(ptr.Pointer()))
@@ -19252,6 +15730,14 @@ func (ptr *QScatterDataItem) Z() float32 {
 		return float32(C.QScatterDataItem_Z(ptr.Pointer()))
 	}
 	return 0
+}
+
+func (ptr *QScatterDataItem) DestroyQScatterDataItem() {
+	if ptr.Pointer() != nil {
+		C.QScatterDataItem_DestroyQScatterDataItem(ptr.Pointer())
+		ptr.SetPointer(nil)
+		runtime.SetFinalizer(ptr, nil)
+	}
 }
 
 type QScatterDataProxy struct {
@@ -19295,62 +15781,6 @@ func NewQScatterDataProxy(parent core.QObject_ITF) *QScatterDataProxy {
 	return NewQScatterDataProxyFromPointer(C.QScatterDataProxy_NewQScatterDataProxy(core.PointerFromQObject(parent)))
 }
 
-func QScatterDataProxy_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QScatterDataProxy_QScatterDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QScatterDataProxy) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QScatterDataProxy_QScatterDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QScatterDataProxy_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QScatterDataProxy_QScatterDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QScatterDataProxy) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QScatterDataProxy_QScatterDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 func (ptr *QScatterDataProxy) AddItem(item QScatterDataItem_ITF) int {
 	if ptr.Pointer() != nil {
 		return int(int32(C.QScatterDataProxy_AddItem(ptr.Pointer(), PointerFromQScatterDataItem(item))))
@@ -19361,7 +15791,7 @@ func (ptr *QScatterDataProxy) AddItem(item QScatterDataItem_ITF) int {
 //export callbackQScatterDataProxy_ArrayReset
 func callbackQScatterDataProxy_ArrayReset(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "arrayReset"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -19374,12 +15804,13 @@ func (ptr *QScatterDataProxy) ConnectArrayReset(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "arrayReset"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "arrayReset", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "arrayReset", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "arrayReset", f)
+			qt.ConnectSignal(ptr.Pointer(), "arrayReset", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19403,10 +15834,24 @@ func (ptr *QScatterDataProxy) InsertItem(index int, item QScatterDataItem_ITF) {
 	}
 }
 
+func (ptr *QScatterDataProxy) ItemAt(index int) *QScatterDataItem {
+	if ptr.Pointer() != nil {
+		return NewQScatterDataItemFromPointer(C.QScatterDataProxy_ItemAt(ptr.Pointer(), C.int(int32(index))))
+	}
+	return nil
+}
+
+func (ptr *QScatterDataProxy) ItemCount() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QScatterDataProxy_ItemCount(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQScatterDataProxy_ItemCountChanged
 func callbackQScatterDataProxy_ItemCountChanged(ptr unsafe.Pointer, count C.int) {
 	if signal := qt.GetSignal(ptr, "itemCountChanged"); signal != nil {
-		signal.(func(int))(int(int32(count)))
+		(*(*func(int))(signal))(int(int32(count)))
 	}
 
 }
@@ -19419,12 +15864,13 @@ func (ptr *QScatterDataProxy) ConnectItemCountChanged(f func(count int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemCountChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemCountChanged", func(count int) {
-				signal.(func(int))(count)
+			f := func(count int) {
+				(*(*func(int))(signal))(count)
 				f(count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemCountChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemCountChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemCountChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19445,7 +15891,7 @@ func (ptr *QScatterDataProxy) ItemCountChanged(count int) {
 //export callbackQScatterDataProxy_ItemsAdded
 func callbackQScatterDataProxy_ItemsAdded(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "itemsAdded"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -19458,12 +15904,13 @@ func (ptr *QScatterDataProxy) ConnectItemsAdded(f func(startIndex int, count int
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemsAdded"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemsAdded", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemsAdded", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemsAdded", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemsAdded", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19484,7 +15931,7 @@ func (ptr *QScatterDataProxy) ItemsAdded(startIndex int, count int) {
 //export callbackQScatterDataProxy_ItemsChanged
 func callbackQScatterDataProxy_ItemsChanged(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "itemsChanged"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -19497,12 +15944,13 @@ func (ptr *QScatterDataProxy) ConnectItemsChanged(f func(startIndex int, count i
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemsChanged", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19523,7 +15971,7 @@ func (ptr *QScatterDataProxy) ItemsChanged(startIndex int, count int) {
 //export callbackQScatterDataProxy_ItemsInserted
 func callbackQScatterDataProxy_ItemsInserted(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "itemsInserted"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -19536,12 +15984,13 @@ func (ptr *QScatterDataProxy) ConnectItemsInserted(f func(startIndex int, count 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemsInserted"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemsInserted", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemsInserted", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemsInserted", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemsInserted", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19562,7 +16011,7 @@ func (ptr *QScatterDataProxy) ItemsInserted(startIndex int, count int) {
 //export callbackQScatterDataProxy_ItemsRemoved
 func callbackQScatterDataProxy_ItemsRemoved(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "itemsRemoved"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -19575,12 +16024,13 @@ func (ptr *QScatterDataProxy) ConnectItemsRemoved(f func(startIndex int, count i
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemsRemoved"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemsRemoved", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemsRemoved", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemsRemoved", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemsRemoved", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19604,10 +16054,17 @@ func (ptr *QScatterDataProxy) RemoveItems(index int, removeCount int) {
 	}
 }
 
+func (ptr *QScatterDataProxy) Series() *QScatter3DSeries {
+	if ptr.Pointer() != nil {
+		return NewQScatter3DSeriesFromPointer(C.QScatterDataProxy_Series(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQScatterDataProxy_SeriesChanged
 func callbackQScatterDataProxy_SeriesChanged(ptr unsafe.Pointer, series unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "seriesChanged"); signal != nil {
-		signal.(func(*QScatter3DSeries))(NewQScatter3DSeriesFromPointer(series))
+		(*(*func(*QScatter3DSeries))(signal))(NewQScatter3DSeriesFromPointer(series))
 	}
 
 }
@@ -19620,12 +16077,13 @@ func (ptr *QScatterDataProxy) ConnectSeriesChanged(f func(series *QScatter3DSeri
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "seriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", func(series *QScatter3DSeries) {
-				signal.(func(*QScatter3DSeries))(series)
+			f := func(series *QScatter3DSeries) {
+				(*(*func(*QScatter3DSeries))(signal))(series)
 				f(series)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19652,7 +16110,7 @@ func (ptr *QScatterDataProxy) SetItem(index int, item QScatterDataItem_ITF) {
 //export callbackQScatterDataProxy_DestroyQScatterDataProxy
 func callbackQScatterDataProxy_DestroyQScatterDataProxy(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QScatterDataProxy"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQScatterDataProxyFromPointer(ptr).DestroyQScatterDataProxyDefault()
 	}
@@ -19662,12 +16120,13 @@ func (ptr *QScatterDataProxy) ConnectDestroyQScatterDataProxy(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QScatterDataProxy"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QScatterDataProxy", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QScatterDataProxy", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QScatterDataProxy", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QScatterDataProxy", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19683,7 +16142,6 @@ func (ptr *QScatterDataProxy) DestroyQScatterDataProxy() {
 	if ptr.Pointer() != nil {
 		C.QScatterDataProxy_DestroyQScatterDataProxy(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -19691,73 +16149,7 @@ func (ptr *QScatterDataProxy) DestroyQScatterDataProxyDefault() {
 	if ptr.Pointer() != nil {
 		C.QScatterDataProxy_DestroyQScatterDataProxyDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QScatterDataProxy) Series() *QScatter3DSeries {
-	if ptr.Pointer() != nil {
-		return NewQScatter3DSeriesFromPointer(C.QScatterDataProxy_Series(ptr.Pointer()))
-	}
-	return nil
-}
-
-//export callbackQScatterDataProxy_MetaObject
-func callbackQScatterDataProxy_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQScatterDataProxyFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QScatterDataProxy) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QScatterDataProxy) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QScatterDataProxy) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QScatterDataProxy_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QScatterDataProxy) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QScatterDataProxy_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QScatterDataProxy) ItemAt(index int) *QScatterDataItem {
-	if ptr.Pointer() != nil {
-		return NewQScatterDataItemFromPointer(C.QScatterDataProxy_ItemAt(ptr.Pointer(), C.int(int32(index))))
-	}
-	return nil
-}
-
-func (ptr *QScatterDataProxy) ItemCount() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QScatterDataProxy_ItemCount(ptr.Pointer())))
-	}
-	return 0
 }
 
 type QSurface3DSeries struct {
@@ -19808,74 +16200,6 @@ const (
 	QSurface3DSeries__DrawSurfaceAndWireframe QSurface3DSeries__DrawFlag = QSurface3DSeries__DrawFlag(QSurface3DSeries__DrawWireframe | QSurface3DSeries__DrawSurface)
 )
 
-func QSurface3DSeries_InvalidSelectionPosition() *core.QPoint {
-	tmpValue := core.NewQPointFromPointer(C.QSurface3DSeries_QSurface3DSeries_InvalidSelectionPosition())
-	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-	return tmpValue
-}
-
-func (ptr *QSurface3DSeries) InvalidSelectionPosition() *core.QPoint {
-	tmpValue := core.NewQPointFromPointer(C.QSurface3DSeries_QSurface3DSeries_InvalidSelectionPosition())
-	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-	return tmpValue
-}
-
-func QSurface3DSeries_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSurface3DSeries_QSurface3DSeries_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QSurface3DSeries) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSurface3DSeries_QSurface3DSeries_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QSurface3DSeries_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSurface3DSeries_QSurface3DSeries_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QSurface3DSeries) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSurface3DSeries_QSurface3DSeries_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 func NewQSurface3DSeries(parent core.QObject_ITF) *QSurface3DSeries {
 	return NewQSurface3DSeriesFromPointer(C.QSurface3DSeries_NewQSurface3DSeries(core.PointerFromQObject(parent)))
 }
@@ -19884,10 +16208,17 @@ func NewQSurface3DSeries2(dataProxy QSurfaceDataProxy_ITF, parent core.QObject_I
 	return NewQSurface3DSeriesFromPointer(C.QSurface3DSeries_NewQSurface3DSeries2(PointerFromQSurfaceDataProxy(dataProxy), core.PointerFromQObject(parent)))
 }
 
+func (ptr *QSurface3DSeries) DataProxy() *QSurfaceDataProxy {
+	if ptr.Pointer() != nil {
+		return NewQSurfaceDataProxyFromPointer(C.QSurface3DSeries_DataProxy(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQSurface3DSeries_DataProxyChanged
 func callbackQSurface3DSeries_DataProxyChanged(ptr unsafe.Pointer, proxy unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "dataProxyChanged"); signal != nil {
-		signal.(func(*QSurfaceDataProxy))(NewQSurfaceDataProxyFromPointer(proxy))
+		(*(*func(*QSurfaceDataProxy))(signal))(NewQSurfaceDataProxyFromPointer(proxy))
 	}
 
 }
@@ -19900,12 +16231,13 @@ func (ptr *QSurface3DSeries) ConnectDataProxyChanged(f func(proxy *QSurfaceDataP
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "dataProxyChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", func(proxy *QSurfaceDataProxy) {
-				signal.(func(*QSurfaceDataProxy))(proxy)
+			f := func(proxy *QSurfaceDataProxy) {
+				(*(*func(*QSurfaceDataProxy))(signal))(proxy)
 				f(proxy)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "dataProxyChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19923,10 +16255,17 @@ func (ptr *QSurface3DSeries) DataProxyChanged(proxy QSurfaceDataProxy_ITF) {
 	}
 }
 
+func (ptr *QSurface3DSeries) DrawMode() QSurface3DSeries__DrawFlag {
+	if ptr.Pointer() != nil {
+		return QSurface3DSeries__DrawFlag(C.QSurface3DSeries_DrawMode(ptr.Pointer()))
+	}
+	return 0
+}
+
 //export callbackQSurface3DSeries_DrawModeChanged
 func callbackQSurface3DSeries_DrawModeChanged(ptr unsafe.Pointer, mode C.longlong) {
 	if signal := qt.GetSignal(ptr, "drawModeChanged"); signal != nil {
-		signal.(func(QSurface3DSeries__DrawFlag))(QSurface3DSeries__DrawFlag(mode))
+		(*(*func(QSurface3DSeries__DrawFlag))(signal))(QSurface3DSeries__DrawFlag(mode))
 	}
 
 }
@@ -19939,12 +16278,13 @@ func (ptr *QSurface3DSeries) ConnectDrawModeChanged(f func(mode QSurface3DSeries
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "drawModeChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "drawModeChanged", func(mode QSurface3DSeries__DrawFlag) {
-				signal.(func(QSurface3DSeries__DrawFlag))(mode)
+			f := func(mode QSurface3DSeries__DrawFlag) {
+				(*(*func(QSurface3DSeries__DrawFlag))(signal))(mode)
 				f(mode)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "drawModeChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "drawModeChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "drawModeChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -19965,7 +16305,7 @@ func (ptr *QSurface3DSeries) DrawModeChanged(mode QSurface3DSeries__DrawFlag) {
 //export callbackQSurface3DSeries_FlatShadingEnabledChanged
 func callbackQSurface3DSeries_FlatShadingEnabledChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "flatShadingEnabledChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -19978,12 +16318,13 @@ func (ptr *QSurface3DSeries) ConnectFlatShadingEnabledChanged(f func(enable bool
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "flatShadingEnabledChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "flatShadingEnabledChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "flatShadingEnabledChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "flatShadingEnabledChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "flatShadingEnabledChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20004,7 +16345,7 @@ func (ptr *QSurface3DSeries) FlatShadingEnabledChanged(enable bool) {
 //export callbackQSurface3DSeries_FlatShadingSupportedChanged
 func callbackQSurface3DSeries_FlatShadingSupportedChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "flatShadingSupportedChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -20017,12 +16358,13 @@ func (ptr *QSurface3DSeries) ConnectFlatShadingSupportedChanged(f func(enable bo
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "flatShadingSupportedChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "flatShadingSupportedChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "flatShadingSupportedChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "flatShadingSupportedChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "flatShadingSupportedChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20040,10 +16382,45 @@ func (ptr *QSurface3DSeries) FlatShadingSupportedChanged(enable bool) {
 	}
 }
 
+func QSurface3DSeries_InvalidSelectionPosition() *core.QPoint {
+	tmpValue := core.NewQPointFromPointer(C.QSurface3DSeries_QSurface3DSeries_InvalidSelectionPosition())
+	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+	return tmpValue
+}
+
+func (ptr *QSurface3DSeries) InvalidSelectionPosition() *core.QPoint {
+	tmpValue := core.NewQPointFromPointer(C.QSurface3DSeries_QSurface3DSeries_InvalidSelectionPosition())
+	runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+	return tmpValue
+}
+
+func (ptr *QSurface3DSeries) IsFlatShadingEnabled() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSurface3DSeries_IsFlatShadingEnabled(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QSurface3DSeries) IsFlatShadingSupported() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QSurface3DSeries_IsFlatShadingSupported(ptr.Pointer())) != 0
+	}
+	return false
+}
+
+func (ptr *QSurface3DSeries) SelectedPoint() *core.QPoint {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQPointFromPointer(C.QSurface3DSeries_SelectedPoint(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQSurface3DSeries_SelectedPointChanged
 func callbackQSurface3DSeries_SelectedPointChanged(ptr unsafe.Pointer, position unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "selectedPointChanged"); signal != nil {
-		signal.(func(*core.QPoint))(core.NewQPointFromPointer(position))
+		(*(*func(*core.QPoint))(signal))(core.NewQPointFromPointer(position))
 	}
 
 }
@@ -20056,12 +16433,13 @@ func (ptr *QSurface3DSeries) ConnectSelectedPointChanged(f func(position *core.Q
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "selectedPointChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "selectedPointChanged", func(position *core.QPoint) {
-				signal.(func(*core.QPoint))(position)
+			f := func(position *core.QPoint) {
+				(*(*func(*core.QPoint))(signal))(position)
 				f(position)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "selectedPointChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "selectedPointChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "selectedPointChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20120,10 +16498,19 @@ func (ptr *QSurface3DSeries) SetTextureFile(filename string) {
 	}
 }
 
+func (ptr *QSurface3DSeries) Texture() *gui.QImage {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQImageFromPointer(C.QSurface3DSeries_Texture(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QImage).DestroyQImage)
+		return tmpValue
+	}
+	return nil
+}
+
 //export callbackQSurface3DSeries_TextureChanged
 func callbackQSurface3DSeries_TextureChanged(ptr unsafe.Pointer, image unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "textureChanged"); signal != nil {
-		signal.(func(*gui.QImage))(gui.NewQImageFromPointer(image))
+		(*(*func(*gui.QImage))(signal))(gui.NewQImageFromPointer(image))
 	}
 
 }
@@ -20136,12 +16523,13 @@ func (ptr *QSurface3DSeries) ConnectTextureChanged(f func(image *gui.QImage)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "textureChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "textureChanged", func(image *gui.QImage) {
-				signal.(func(*gui.QImage))(image)
+			f := func(image *gui.QImage) {
+				(*(*func(*gui.QImage))(signal))(image)
 				f(image)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "textureChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "textureChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "textureChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20159,10 +16547,17 @@ func (ptr *QSurface3DSeries) TextureChanged(image gui.QImage_ITF) {
 	}
 }
 
+func (ptr *QSurface3DSeries) TextureFile() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QSurface3DSeries_TextureFile(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQSurface3DSeries_TextureFileChanged
 func callbackQSurface3DSeries_TextureFileChanged(ptr unsafe.Pointer, filename C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "textureFileChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(filename))
+		(*(*func(string))(signal))(cGoUnpackString(filename))
 	}
 
 }
@@ -20175,12 +16570,13 @@ func (ptr *QSurface3DSeries) ConnectTextureFileChanged(f func(filename string)) 
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "textureFileChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "textureFileChanged", func(filename string) {
-				signal.(func(string))(filename)
+			f := func(filename string) {
+				(*(*func(string))(signal))(filename)
 				f(filename)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "textureFileChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "textureFileChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "textureFileChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20206,7 +16602,7 @@ func (ptr *QSurface3DSeries) TextureFileChanged(filename string) {
 //export callbackQSurface3DSeries_DestroyQSurface3DSeries
 func callbackQSurface3DSeries_DestroyQSurface3DSeries(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QSurface3DSeries"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQSurface3DSeriesFromPointer(ptr).DestroyQSurface3DSeriesDefault()
 	}
@@ -20216,12 +16612,13 @@ func (ptr *QSurface3DSeries) ConnectDestroyQSurface3DSeries(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QSurface3DSeries"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QSurface3DSeries", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QSurface3DSeries", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QSurface3DSeries", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QSurface3DSeries", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20247,103 +16644,6 @@ func (ptr *QSurface3DSeries) DestroyQSurface3DSeriesDefault() {
 		ptr.SetPointer(nil)
 		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QSurface3DSeries) Texture() *gui.QImage {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQImageFromPointer(C.QSurface3DSeries_Texture(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QImage).DestroyQImage)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QSurface3DSeries) SelectedPoint() *core.QPoint {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQPointFromPointer(C.QSurface3DSeries_SelectedPoint(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QPoint).DestroyQPoint)
-		return tmpValue
-	}
-	return nil
-}
-
-func (ptr *QSurface3DSeries) TextureFile() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QSurface3DSeries_TextureFile(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QSurface3DSeries) DrawMode() QSurface3DSeries__DrawFlag {
-	if ptr.Pointer() != nil {
-		return QSurface3DSeries__DrawFlag(C.QSurface3DSeries_DrawMode(ptr.Pointer()))
-	}
-	return 0
-}
-
-func (ptr *QSurface3DSeries) DataProxy() *QSurfaceDataProxy {
-	if ptr.Pointer() != nil {
-		return NewQSurfaceDataProxyFromPointer(C.QSurface3DSeries_DataProxy(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QSurface3DSeries) IsFlatShadingEnabled() bool {
-	if ptr.Pointer() != nil {
-		return C.QSurface3DSeries_IsFlatShadingEnabled(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QSurface3DSeries) IsFlatShadingSupported() bool {
-	if ptr.Pointer() != nil {
-		return C.QSurface3DSeries_IsFlatShadingSupported(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQSurface3DSeries_MetaObject
-func callbackQSurface3DSeries_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQSurface3DSeriesFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QSurface3DSeries) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QSurface3DSeries) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QSurface3DSeries) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QSurface3DSeries_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QSurface3DSeries) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QSurface3DSeries_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QSurfaceDataItem struct {
@@ -20389,16 +16689,25 @@ func NewQSurfaceDataItem() *QSurfaceDataItem {
 	return tmpValue
 }
 
+func NewQSurfaceDataItem2(position gui.QVector3D_ITF) *QSurfaceDataItem {
+	tmpValue := NewQSurfaceDataItemFromPointer(C.QSurfaceDataItem_NewQSurfaceDataItem2(gui.PointerFromQVector3D(position)))
+	runtime.SetFinalizer(tmpValue, (*QSurfaceDataItem).DestroyQSurfaceDataItem)
+	return tmpValue
+}
+
 func NewQSurfaceDataItem3(other QSurfaceDataItem_ITF) *QSurfaceDataItem {
 	tmpValue := NewQSurfaceDataItemFromPointer(C.QSurfaceDataItem_NewQSurfaceDataItem3(PointerFromQSurfaceDataItem(other)))
 	runtime.SetFinalizer(tmpValue, (*QSurfaceDataItem).DestroyQSurfaceDataItem)
 	return tmpValue
 }
 
-func NewQSurfaceDataItem2(position gui.QVector3D_ITF) *QSurfaceDataItem {
-	tmpValue := NewQSurfaceDataItemFromPointer(C.QSurfaceDataItem_NewQSurfaceDataItem2(gui.PointerFromQVector3D(position)))
-	runtime.SetFinalizer(tmpValue, (*QSurfaceDataItem).DestroyQSurfaceDataItem)
-	return tmpValue
+func (ptr *QSurfaceDataItem) Position() *gui.QVector3D {
+	if ptr.Pointer() != nil {
+		tmpValue := gui.NewQVector3DFromPointer(C.QSurfaceDataItem_Position(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
+		return tmpValue
+	}
+	return nil
 }
 
 func (ptr *QSurfaceDataItem) SetPosition(pos gui.QVector3D_ITF) {
@@ -20425,23 +16734,6 @@ func (ptr *QSurfaceDataItem) SetZ(value float32) {
 	}
 }
 
-func (ptr *QSurfaceDataItem) DestroyQSurfaceDataItem() {
-	if ptr.Pointer() != nil {
-		C.QSurfaceDataItem_DestroyQSurfaceDataItem(ptr.Pointer())
-		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
-	}
-}
-
-func (ptr *QSurfaceDataItem) Position() *gui.QVector3D {
-	if ptr.Pointer() != nil {
-		tmpValue := gui.NewQVector3DFromPointer(C.QSurfaceDataItem_Position(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*gui.QVector3D).DestroyQVector3D)
-		return tmpValue
-	}
-	return nil
-}
-
 func (ptr *QSurfaceDataItem) X() float32 {
 	if ptr.Pointer() != nil {
 		return float32(C.QSurfaceDataItem_X(ptr.Pointer()))
@@ -20461,6 +16753,14 @@ func (ptr *QSurfaceDataItem) Z() float32 {
 		return float32(C.QSurfaceDataItem_Z(ptr.Pointer()))
 	}
 	return 0
+}
+
+func (ptr *QSurfaceDataItem) DestroyQSurfaceDataItem() {
+	if ptr.Pointer() != nil {
+		C.QSurfaceDataItem_DestroyQSurfaceDataItem(ptr.Pointer())
+		ptr.SetPointer(nil)
+		runtime.SetFinalizer(ptr, nil)
+	}
 }
 
 type QSurfaceDataProxy struct {
@@ -20500,62 +16800,6 @@ func NewQSurfaceDataProxyFromPointer(ptr unsafe.Pointer) (n *QSurfaceDataProxy) 
 	n.SetPointer(ptr)
 	return
 }
-func QSurfaceDataProxy_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSurfaceDataProxy_QSurfaceDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QSurfaceDataProxy) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSurfaceDataProxy_QSurfaceDataProxy_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QSurfaceDataProxy_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSurfaceDataProxy_QSurfaceDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QSurfaceDataProxy) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QSurfaceDataProxy_QSurfaceDataProxy_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 func NewQSurfaceDataProxy(parent core.QObject_ITF) *QSurfaceDataProxy {
 	return NewQSurfaceDataProxyFromPointer(C.QSurfaceDataProxy_NewQSurfaceDataProxy(core.PointerFromQObject(parent)))
 }
@@ -20563,7 +16807,7 @@ func NewQSurfaceDataProxy(parent core.QObject_ITF) *QSurfaceDataProxy {
 //export callbackQSurfaceDataProxy_ArrayReset
 func callbackQSurfaceDataProxy_ArrayReset(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "arrayReset"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	}
 
 }
@@ -20576,12 +16820,13 @@ func (ptr *QSurfaceDataProxy) ConnectArrayReset(f func()) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "arrayReset"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "arrayReset", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "arrayReset", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "arrayReset", f)
+			qt.ConnectSignal(ptr.Pointer(), "arrayReset", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20599,10 +16844,17 @@ func (ptr *QSurfaceDataProxy) ArrayReset() {
 	}
 }
 
+func (ptr *QSurfaceDataProxy) ColumnCount() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QSurfaceDataProxy_ColumnCount(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQSurfaceDataProxy_ColumnCountChanged
 func callbackQSurfaceDataProxy_ColumnCountChanged(ptr unsafe.Pointer, count C.int) {
 	if signal := qt.GetSignal(ptr, "columnCountChanged"); signal != nil {
-		signal.(func(int))(int(int32(count)))
+		(*(*func(int))(signal))(int(int32(count)))
 	}
 
 }
@@ -20615,12 +16867,13 @@ func (ptr *QSurfaceDataProxy) ConnectColumnCountChanged(f func(count int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "columnCountChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "columnCountChanged", func(count int) {
-				signal.(func(int))(count)
+			f := func(count int) {
+				(*(*func(int))(signal))(count)
 				f(count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "columnCountChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "columnCountChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "columnCountChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20638,10 +16891,24 @@ func (ptr *QSurfaceDataProxy) ColumnCountChanged(count int) {
 	}
 }
 
+func (ptr *QSurfaceDataProxy) ItemAt(rowIndex int, columnIndex int) *QSurfaceDataItem {
+	if ptr.Pointer() != nil {
+		return NewQSurfaceDataItemFromPointer(C.QSurfaceDataProxy_ItemAt(ptr.Pointer(), C.int(int32(rowIndex)), C.int(int32(columnIndex))))
+	}
+	return nil
+}
+
+func (ptr *QSurfaceDataProxy) ItemAt2(position core.QPoint_ITF) *QSurfaceDataItem {
+	if ptr.Pointer() != nil {
+		return NewQSurfaceDataItemFromPointer(C.QSurfaceDataProxy_ItemAt2(ptr.Pointer(), core.PointerFromQPoint(position)))
+	}
+	return nil
+}
+
 //export callbackQSurfaceDataProxy_ItemChanged
 func callbackQSurfaceDataProxy_ItemChanged(ptr unsafe.Pointer, rowIndex C.int, columnIndex C.int) {
 	if signal := qt.GetSignal(ptr, "itemChanged"); signal != nil {
-		signal.(func(int, int))(int(int32(rowIndex)), int(int32(columnIndex)))
+		(*(*func(int, int))(signal))(int(int32(rowIndex)), int(int32(columnIndex)))
 	}
 
 }
@@ -20654,12 +16921,13 @@ func (ptr *QSurfaceDataProxy) ConnectItemChanged(f func(rowIndex int, columnInde
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "itemChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "itemChanged", func(rowIndex int, columnIndex int) {
-				signal.(func(int, int))(rowIndex, columnIndex)
+			f := func(rowIndex int, columnIndex int) {
+				(*(*func(int, int))(signal))(rowIndex, columnIndex)
 				f(rowIndex, columnIndex)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "itemChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "itemChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "itemChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20683,10 +16951,17 @@ func (ptr *QSurfaceDataProxy) RemoveRows(rowIndex int, removeCount int) {
 	}
 }
 
+func (ptr *QSurfaceDataProxy) RowCount() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QSurfaceDataProxy_RowCount(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQSurfaceDataProxy_RowCountChanged
 func callbackQSurfaceDataProxy_RowCountChanged(ptr unsafe.Pointer, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowCountChanged"); signal != nil {
-		signal.(func(int))(int(int32(count)))
+		(*(*func(int))(signal))(int(int32(count)))
 	}
 
 }
@@ -20699,12 +16974,13 @@ func (ptr *QSurfaceDataProxy) ConnectRowCountChanged(f func(count int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowCountChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowCountChanged", func(count int) {
-				signal.(func(int))(count)
+			f := func(count int) {
+				(*(*func(int))(signal))(count)
 				f(count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowCountChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowCountChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowCountChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20725,7 +17001,7 @@ func (ptr *QSurfaceDataProxy) RowCountChanged(count int) {
 //export callbackQSurfaceDataProxy_RowsAdded
 func callbackQSurfaceDataProxy_RowsAdded(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowsAdded"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -20738,12 +17014,13 @@ func (ptr *QSurfaceDataProxy) ConnectRowsAdded(f func(startIndex int, count int)
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowsAdded"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowsAdded", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowsAdded", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowsAdded", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowsAdded", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20764,7 +17041,7 @@ func (ptr *QSurfaceDataProxy) RowsAdded(startIndex int, count int) {
 //export callbackQSurfaceDataProxy_RowsChanged
 func callbackQSurfaceDataProxy_RowsChanged(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowsChanged"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -20777,12 +17054,13 @@ func (ptr *QSurfaceDataProxy) ConnectRowsChanged(f func(startIndex int, count in
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowsChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowsChanged", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowsChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowsChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowsChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20803,7 +17081,7 @@ func (ptr *QSurfaceDataProxy) RowsChanged(startIndex int, count int) {
 //export callbackQSurfaceDataProxy_RowsInserted
 func callbackQSurfaceDataProxy_RowsInserted(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowsInserted"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -20816,12 +17094,13 @@ func (ptr *QSurfaceDataProxy) ConnectRowsInserted(f func(startIndex int, count i
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowsInserted"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowsInserted", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowsInserted", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowsInserted", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowsInserted", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20842,7 +17121,7 @@ func (ptr *QSurfaceDataProxy) RowsInserted(startIndex int, count int) {
 //export callbackQSurfaceDataProxy_RowsRemoved
 func callbackQSurfaceDataProxy_RowsRemoved(ptr unsafe.Pointer, startIndex C.int, count C.int) {
 	if signal := qt.GetSignal(ptr, "rowsRemoved"); signal != nil {
-		signal.(func(int, int))(int(int32(startIndex)), int(int32(count)))
+		(*(*func(int, int))(signal))(int(int32(startIndex)), int(int32(count)))
 	}
 
 }
@@ -20855,12 +17134,13 @@ func (ptr *QSurfaceDataProxy) ConnectRowsRemoved(f func(startIndex int, count in
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "rowsRemoved"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "rowsRemoved", func(startIndex int, count int) {
-				signal.(func(int, int))(startIndex, count)
+			f := func(startIndex int, count int) {
+				(*(*func(int, int))(signal))(startIndex, count)
 				f(startIndex, count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "rowsRemoved", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "rowsRemoved", f)
+			qt.ConnectSignal(ptr.Pointer(), "rowsRemoved", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20878,10 +17158,17 @@ func (ptr *QSurfaceDataProxy) RowsRemoved(startIndex int, count int) {
 	}
 }
 
+func (ptr *QSurfaceDataProxy) Series() *QSurface3DSeries {
+	if ptr.Pointer() != nil {
+		return NewQSurface3DSeriesFromPointer(C.QSurfaceDataProxy_Series(ptr.Pointer()))
+	}
+	return nil
+}
+
 //export callbackQSurfaceDataProxy_SeriesChanged
 func callbackQSurfaceDataProxy_SeriesChanged(ptr unsafe.Pointer, series unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "seriesChanged"); signal != nil {
-		signal.(func(*QSurface3DSeries))(NewQSurface3DSeriesFromPointer(series))
+		(*(*func(*QSurface3DSeries))(signal))(NewQSurface3DSeriesFromPointer(series))
 	}
 
 }
@@ -20894,12 +17181,13 @@ func (ptr *QSurfaceDataProxy) ConnectSeriesChanged(f func(series *QSurface3DSeri
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "seriesChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", func(series *QSurface3DSeries) {
-				signal.(func(*QSurface3DSeries))(series)
+			f := func(series *QSurface3DSeries) {
+				(*(*func(*QSurface3DSeries))(signal))(series)
 				f(series)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "seriesChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20917,22 +17205,22 @@ func (ptr *QSurfaceDataProxy) SeriesChanged(series QSurface3DSeries_ITF) {
 	}
 }
 
-func (ptr *QSurfaceDataProxy) SetItem2(position core.QPoint_ITF, item QSurfaceDataItem_ITF) {
-	if ptr.Pointer() != nil {
-		C.QSurfaceDataProxy_SetItem2(ptr.Pointer(), core.PointerFromQPoint(position), PointerFromQSurfaceDataItem(item))
-	}
-}
-
 func (ptr *QSurfaceDataProxy) SetItem(rowIndex int, columnIndex int, item QSurfaceDataItem_ITF) {
 	if ptr.Pointer() != nil {
 		C.QSurfaceDataProxy_SetItem(ptr.Pointer(), C.int(int32(rowIndex)), C.int(int32(columnIndex)), PointerFromQSurfaceDataItem(item))
 	}
 }
 
+func (ptr *QSurfaceDataProxy) SetItem2(position core.QPoint_ITF, item QSurfaceDataItem_ITF) {
+	if ptr.Pointer() != nil {
+		C.QSurfaceDataProxy_SetItem2(ptr.Pointer(), core.PointerFromQPoint(position), PointerFromQSurfaceDataItem(item))
+	}
+}
+
 //export callbackQSurfaceDataProxy_DestroyQSurfaceDataProxy
 func callbackQSurfaceDataProxy_DestroyQSurfaceDataProxy(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QSurfaceDataProxy"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQSurfaceDataProxyFromPointer(ptr).DestroyQSurfaceDataProxyDefault()
 	}
@@ -20942,12 +17230,13 @@ func (ptr *QSurfaceDataProxy) ConnectDestroyQSurfaceDataProxy(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QSurfaceDataProxy"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QSurfaceDataProxy", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QSurfaceDataProxy", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QSurfaceDataProxy", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QSurfaceDataProxy", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -20963,7 +17252,6 @@ func (ptr *QSurfaceDataProxy) DestroyQSurfaceDataProxy() {
 	if ptr.Pointer() != nil {
 		C.QSurfaceDataProxy_DestroyQSurfaceDataProxy(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -20971,87 +17259,7 @@ func (ptr *QSurfaceDataProxy) DestroyQSurfaceDataProxyDefault() {
 	if ptr.Pointer() != nil {
 		C.QSurfaceDataProxy_DestroyQSurfaceDataProxyDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QSurfaceDataProxy) Series() *QSurface3DSeries {
-	if ptr.Pointer() != nil {
-		return NewQSurface3DSeriesFromPointer(C.QSurfaceDataProxy_Series(ptr.Pointer()))
-	}
-	return nil
-}
-
-//export callbackQSurfaceDataProxy_MetaObject
-func callbackQSurfaceDataProxy_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQSurfaceDataProxyFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QSurfaceDataProxy) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QSurfaceDataProxy) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QSurfaceDataProxy) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QSurfaceDataProxy_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QSurfaceDataProxy) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QSurfaceDataProxy_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QSurfaceDataProxy) ItemAt2(position core.QPoint_ITF) *QSurfaceDataItem {
-	if ptr.Pointer() != nil {
-		return NewQSurfaceDataItemFromPointer(C.QSurfaceDataProxy_ItemAt2(ptr.Pointer(), core.PointerFromQPoint(position)))
-	}
-	return nil
-}
-
-func (ptr *QSurfaceDataProxy) ItemAt(rowIndex int, columnIndex int) *QSurfaceDataItem {
-	if ptr.Pointer() != nil {
-		return NewQSurfaceDataItemFromPointer(C.QSurfaceDataProxy_ItemAt(ptr.Pointer(), C.int(int32(rowIndex)), C.int(int32(columnIndex))))
-	}
-	return nil
-}
-
-func (ptr *QSurfaceDataProxy) ColumnCount() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QSurfaceDataProxy_ColumnCount(ptr.Pointer())))
-	}
-	return 0
-}
-
-func (ptr *QSurfaceDataProxy) RowCount() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QSurfaceDataProxy_RowCount(ptr.Pointer())))
-	}
-	return 0
 }
 
 type QTouch3DInputHandler struct {
@@ -21091,62 +17299,6 @@ func NewQTouch3DInputHandlerFromPointer(ptr unsafe.Pointer) (n *QTouch3DInputHan
 	n.SetPointer(ptr)
 	return
 }
-func QTouch3DInputHandler_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QTouch3DInputHandler_QTouch3DInputHandler_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QTouch3DInputHandler) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QTouch3DInputHandler_QTouch3DInputHandler_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QTouch3DInputHandler_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QTouch3DInputHandler_QTouch3DInputHandler_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QTouch3DInputHandler) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QTouch3DInputHandler_QTouch3DInputHandler_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 func NewQTouch3DInputHandler(parent core.QObject_ITF) *QTouch3DInputHandler {
 	return NewQTouch3DInputHandlerFromPointer(C.QTouch3DInputHandler_NewQTouch3DInputHandler(core.PointerFromQObject(parent)))
 }
@@ -21154,7 +17306,7 @@ func NewQTouch3DInputHandler(parent core.QObject_ITF) *QTouch3DInputHandler {
 //export callbackQTouch3DInputHandler_TouchEvent
 func callbackQTouch3DInputHandler_TouchEvent(ptr unsafe.Pointer, event unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "touchEvent"); signal != nil {
-		signal.(func(*gui.QTouchEvent))(gui.NewQTouchEventFromPointer(event))
+		(*(*func(*gui.QTouchEvent))(signal))(gui.NewQTouchEventFromPointer(event))
 	} else {
 		NewQTouch3DInputHandlerFromPointer(ptr).TouchEventDefault(gui.NewQTouchEventFromPointer(event))
 	}
@@ -21164,12 +17316,13 @@ func (ptr *QTouch3DInputHandler) ConnectTouchEvent(f func(event *gui.QTouchEvent
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "touchEvent"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "touchEvent", func(event *gui.QTouchEvent) {
-				signal.(func(*gui.QTouchEvent))(event)
+			f := func(event *gui.QTouchEvent) {
+				(*(*func(*gui.QTouchEvent))(signal))(event)
 				f(event)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "touchEvent", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "touchEvent", f)
+			qt.ConnectSignal(ptr.Pointer(), "touchEvent", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -21196,7 +17349,7 @@ func (ptr *QTouch3DInputHandler) TouchEventDefault(event gui.QTouchEvent_ITF) {
 //export callbackQTouch3DInputHandler_DestroyQTouch3DInputHandler
 func callbackQTouch3DInputHandler_DestroyQTouch3DInputHandler(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QTouch3DInputHandler"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQTouch3DInputHandlerFromPointer(ptr).DestroyQTouch3DInputHandlerDefault()
 	}
@@ -21206,12 +17359,13 @@ func (ptr *QTouch3DInputHandler) ConnectDestroyQTouch3DInputHandler(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QTouch3DInputHandler"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QTouch3DInputHandler", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QTouch3DInputHandler", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QTouch3DInputHandler", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QTouch3DInputHandler", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -21227,7 +17381,6 @@ func (ptr *QTouch3DInputHandler) DestroyQTouch3DInputHandler() {
 	if ptr.Pointer() != nil {
 		C.QTouch3DInputHandler_DestroyQTouch3DInputHandler(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -21235,52 +17388,7 @@ func (ptr *QTouch3DInputHandler) DestroyQTouch3DInputHandlerDefault() {
 	if ptr.Pointer() != nil {
 		C.QTouch3DInputHandler_DestroyQTouch3DInputHandlerDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-//export callbackQTouch3DInputHandler_MetaObject
-func callbackQTouch3DInputHandler_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQTouch3DInputHandlerFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QTouch3DInputHandler) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QTouch3DInputHandler) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QTouch3DInputHandler) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QTouch3DInputHandler_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QTouch3DInputHandler) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QTouch3DInputHandler_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
 }
 
 type QValue3DAxis struct {
@@ -21320,70 +17428,21 @@ func NewQValue3DAxisFromPointer(ptr unsafe.Pointer) (n *QValue3DAxis) {
 	n.SetPointer(ptr)
 	return
 }
-func QValue3DAxis_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QValue3DAxis_QValue3DAxis_Tr(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QValue3DAxis) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QValue3DAxis_QValue3DAxis_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QValue3DAxis_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QValue3DAxis_QValue3DAxis_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QValue3DAxis) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QValue3DAxis_QValue3DAxis_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
 func NewQValue3DAxis(parent core.QObject_ITF) *QValue3DAxis {
 	return NewQValue3DAxisFromPointer(C.QValue3DAxis_NewQValue3DAxis(core.PointerFromQObject(parent)))
+}
+
+func (ptr *QValue3DAxis) Formatter() *QValue3DAxisFormatter {
+	if ptr.Pointer() != nil {
+		return NewQValue3DAxisFormatterFromPointer(C.QValue3DAxis_Formatter(ptr.Pointer()))
+	}
+	return nil
 }
 
 //export callbackQValue3DAxis_FormatterChanged
 func callbackQValue3DAxis_FormatterChanged(ptr unsafe.Pointer, formatter unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "formatterChanged"); signal != nil {
-		signal.(func(*QValue3DAxisFormatter))(NewQValue3DAxisFormatterFromPointer(formatter))
+		(*(*func(*QValue3DAxisFormatter))(signal))(NewQValue3DAxisFormatterFromPointer(formatter))
 	}
 
 }
@@ -21396,12 +17455,13 @@ func (ptr *QValue3DAxis) ConnectFormatterChanged(f func(formatter *QValue3DAxisF
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "formatterChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "formatterChanged", func(formatter *QValue3DAxisFormatter) {
-				signal.(func(*QValue3DAxisFormatter))(formatter)
+			f := func(formatter *QValue3DAxisFormatter) {
+				(*(*func(*QValue3DAxisFormatter))(signal))(formatter)
 				f(formatter)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "formatterChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "formatterChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "formatterChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -21419,10 +17479,17 @@ func (ptr *QValue3DAxis) FormatterChanged(formatter QValue3DAxisFormatter_ITF) {
 	}
 }
 
+func (ptr *QValue3DAxis) LabelFormat() string {
+	if ptr.Pointer() != nil {
+		return cGoUnpackString(C.QValue3DAxis_LabelFormat(ptr.Pointer()))
+	}
+	return ""
+}
+
 //export callbackQValue3DAxis_LabelFormatChanged
 func callbackQValue3DAxis_LabelFormatChanged(ptr unsafe.Pointer, format C.struct_QtDataVisualization_PackedString) {
 	if signal := qt.GetSignal(ptr, "labelFormatChanged"); signal != nil {
-		signal.(func(string))(cGoUnpackString(format))
+		(*(*func(string))(signal))(cGoUnpackString(format))
 	}
 
 }
@@ -21435,12 +17502,13 @@ func (ptr *QValue3DAxis) ConnectLabelFormatChanged(f func(format string)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "labelFormatChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "labelFormatChanged", func(format string) {
-				signal.(func(string))(format)
+			f := func(format string) {
+				(*(*func(string))(signal))(format)
 				f(format)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "labelFormatChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "labelFormatChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "labelFormatChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -21463,10 +17531,17 @@ func (ptr *QValue3DAxis) LabelFormatChanged(format string) {
 	}
 }
 
+func (ptr *QValue3DAxis) Reversed() bool {
+	if ptr.Pointer() != nil {
+		return int8(C.QValue3DAxis_Reversed(ptr.Pointer())) != 0
+	}
+	return false
+}
+
 //export callbackQValue3DAxis_ReversedChanged
 func callbackQValue3DAxis_ReversedChanged(ptr unsafe.Pointer, enable C.char) {
 	if signal := qt.GetSignal(ptr, "reversedChanged"); signal != nil {
-		signal.(func(bool))(int8(enable) != 0)
+		(*(*func(bool))(signal))(int8(enable) != 0)
 	}
 
 }
@@ -21479,12 +17554,13 @@ func (ptr *QValue3DAxis) ConnectReversedChanged(f func(enable bool)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "reversedChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "reversedChanged", func(enable bool) {
-				signal.(func(bool))(enable)
+			f := func(enable bool) {
+				(*(*func(bool))(signal))(enable)
 				f(enable)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "reversedChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "reversedChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "reversedChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -21502,10 +17578,17 @@ func (ptr *QValue3DAxis) ReversedChanged(enable bool) {
 	}
 }
 
+func (ptr *QValue3DAxis) SegmentCount() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QValue3DAxis_SegmentCount(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQValue3DAxis_SegmentCountChanged
 func callbackQValue3DAxis_SegmentCountChanged(ptr unsafe.Pointer, count C.int) {
 	if signal := qt.GetSignal(ptr, "segmentCountChanged"); signal != nil {
-		signal.(func(int))(int(int32(count)))
+		(*(*func(int))(signal))(int(int32(count)))
 	}
 
 }
@@ -21518,12 +17601,13 @@ func (ptr *QValue3DAxis) ConnectSegmentCountChanged(f func(count int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "segmentCountChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "segmentCountChanged", func(count int) {
-				signal.(func(int))(count)
+			f := func(count int) {
+				(*(*func(int))(signal))(count)
 				f(count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "segmentCountChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "segmentCountChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "segmentCountChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -21576,10 +17660,17 @@ func (ptr *QValue3DAxis) SetSubSegmentCount(count int) {
 	}
 }
 
+func (ptr *QValue3DAxis) SubSegmentCount() int {
+	if ptr.Pointer() != nil {
+		return int(int32(C.QValue3DAxis_SubSegmentCount(ptr.Pointer())))
+	}
+	return 0
+}
+
 //export callbackQValue3DAxis_SubSegmentCountChanged
 func callbackQValue3DAxis_SubSegmentCountChanged(ptr unsafe.Pointer, count C.int) {
 	if signal := qt.GetSignal(ptr, "subSegmentCountChanged"); signal != nil {
-		signal.(func(int))(int(int32(count)))
+		(*(*func(int))(signal))(int(int32(count)))
 	}
 
 }
@@ -21592,12 +17683,13 @@ func (ptr *QValue3DAxis) ConnectSubSegmentCountChanged(f func(count int)) {
 		}
 
 		if signal := qt.LendSignal(ptr.Pointer(), "subSegmentCountChanged"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "subSegmentCountChanged", func(count int) {
-				signal.(func(int))(count)
+			f := func(count int) {
+				(*(*func(int))(signal))(count)
 				f(count)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "subSegmentCountChanged", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "subSegmentCountChanged", f)
+			qt.ConnectSignal(ptr.Pointer(), "subSegmentCountChanged", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -21618,7 +17710,7 @@ func (ptr *QValue3DAxis) SubSegmentCountChanged(count int) {
 //export callbackQValue3DAxis_DestroyQValue3DAxis
 func callbackQValue3DAxis_DestroyQValue3DAxis(ptr unsafe.Pointer) {
 	if signal := qt.GetSignal(ptr, "~QValue3DAxis"); signal != nil {
-		signal.(func())()
+		(*(*func())(signal))()
 	} else {
 		NewQValue3DAxisFromPointer(ptr).DestroyQValue3DAxisDefault()
 	}
@@ -21628,12 +17720,13 @@ func (ptr *QValue3DAxis) ConnectDestroyQValue3DAxis(f func()) {
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "~QValue3DAxis"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QValue3DAxis", func() {
-				signal.(func())()
+			f := func() {
+				(*(*func())(signal))()
 				f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QValue3DAxis", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QValue3DAxis", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QValue3DAxis", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -21649,7 +17742,6 @@ func (ptr *QValue3DAxis) DestroyQValue3DAxis() {
 	if ptr.Pointer() != nil {
 		C.QValue3DAxis_DestroyQValue3DAxis(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
@@ -21657,87 +17749,7 @@ func (ptr *QValue3DAxis) DestroyQValue3DAxisDefault() {
 	if ptr.Pointer() != nil {
 		C.QValue3DAxis_DestroyQValue3DAxisDefault(ptr.Pointer())
 		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
 	}
-}
-
-func (ptr *QValue3DAxis) LabelFormat() string {
-	if ptr.Pointer() != nil {
-		return cGoUnpackString(C.QValue3DAxis_LabelFormat(ptr.Pointer()))
-	}
-	return ""
-}
-
-func (ptr *QValue3DAxis) Formatter() *QValue3DAxisFormatter {
-	if ptr.Pointer() != nil {
-		return NewQValue3DAxisFormatterFromPointer(C.QValue3DAxis_Formatter(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QValue3DAxis) Reversed() bool {
-	if ptr.Pointer() != nil {
-		return C.QValue3DAxis_Reversed(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQValue3DAxis_MetaObject
-func callbackQValue3DAxis_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQValue3DAxisFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QValue3DAxis) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
-		}
-	}
-}
-
-func (ptr *QValue3DAxis) DisconnectMetaObject() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
-	}
-}
-
-func (ptr *QValue3DAxis) MetaObject() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QValue3DAxis_MetaObject(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QValue3DAxis) MetaObjectDefault() *core.QMetaObject {
-	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QValue3DAxis_MetaObjectDefault(ptr.Pointer()))
-	}
-	return nil
-}
-
-func (ptr *QValue3DAxis) SegmentCount() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QValue3DAxis_SegmentCount(ptr.Pointer())))
-	}
-	return 0
-}
-
-func (ptr *QValue3DAxis) SubSegmentCount() int {
-	if ptr.Pointer() != nil {
-		return int(int32(C.QValue3DAxis_SubSegmentCount(ptr.Pointer())))
-	}
-	return 0
 }
 
 type QValue3DAxisFormatter struct {
@@ -21777,247 +17789,22 @@ func NewQValue3DAxisFormatterFromPointer(ptr unsafe.Pointer) (n *QValue3DAxisFor
 	n.SetPointer(ptr)
 	return
 }
-func QValue3DAxisFormatter_Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QValue3DAxisFormatter_QValue3DAxisFormatter_Tr(sC, cC, C.int(int32(n))))
+func NewQValue3DAxisFormatter2(parent core.QObject_ITF) *QValue3DAxisFormatter {
+	return NewQValue3DAxisFormatterFromPointer(C.QValue3DAxisFormatter_NewQValue3DAxisFormatter2(core.PointerFromQObject(parent)))
 }
 
-func (ptr *QValue3DAxisFormatter) Tr(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QValue3DAxisFormatter_QValue3DAxisFormatter_Tr(sC, cC, C.int(int32(n))))
-}
-
-func QValue3DAxisFormatter_TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QValue3DAxisFormatter_QValue3DAxisFormatter_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func (ptr *QValue3DAxisFormatter) TrUtf8(s string, c string, n int) string {
-	var sC *C.char
-	if s != "" {
-		sC = C.CString(s)
-		defer C.free(unsafe.Pointer(sC))
-	}
-	var cC *C.char
-	if c != "" {
-		cC = C.CString(c)
-		defer C.free(unsafe.Pointer(cC))
-	}
-	return cGoUnpackString(C.QValue3DAxisFormatter_QValue3DAxisFormatter_TrUtf8(sC, cC, C.int(int32(n))))
-}
-
-func NewQValue3DAxisFormatter(parent core.QObject_ITF) *QValue3DAxisFormatter {
-	return NewQValue3DAxisFormatterFromPointer(C.QValue3DAxisFormatter_NewQValue3DAxisFormatter(core.PointerFromQObject(parent)))
-}
-
-func (ptr *QValue3DAxisFormatter) MarkDirty(labelsChange bool) {
+func (ptr *QValue3DAxisFormatter) AllowNegatives() bool {
 	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_MarkDirty(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(labelsChange))))
+		return int8(C.QValue3DAxisFormatter_AllowNegatives(ptr.Pointer())) != 0
 	}
+	return false
 }
 
-//export callbackQValue3DAxisFormatter_Recalculate
-func callbackQValue3DAxisFormatter_Recalculate(ptr unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "recalculate"); signal != nil {
-		signal.(func())()
-	} else {
-		NewQValue3DAxisFormatterFromPointer(ptr).RecalculateDefault()
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) ConnectRecalculate(f func()) {
+func (ptr *QValue3DAxisFormatter) AllowZero() bool {
 	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "recalculate"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "recalculate", func() {
-				signal.(func())()
-				f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "recalculate", f)
-		}
+		return int8(C.QValue3DAxisFormatter_AllowZero(ptr.Pointer())) != 0
 	}
-}
-
-func (ptr *QValue3DAxisFormatter) DisconnectRecalculate() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "recalculate")
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) Recalculate() {
-	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_Recalculate(ptr.Pointer())
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) RecalculateDefault() {
-	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_RecalculateDefault(ptr.Pointer())
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) SetAllowNegatives(allow bool) {
-	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_SetAllowNegatives(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(allow))))
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) SetAllowZero(allow bool) {
-	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_SetAllowZero(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(allow))))
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) SetLocale(locale core.QLocale_ITF) {
-	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_SetLocale(ptr.Pointer(), core.PointerFromQLocale(locale))
-	}
-}
-
-//export callbackQValue3DAxisFormatter_DestroyQValue3DAxisFormatter
-func callbackQValue3DAxisFormatter_DestroyQValue3DAxisFormatter(ptr unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "~QValue3DAxisFormatter"); signal != nil {
-		signal.(func())()
-	} else {
-		NewQValue3DAxisFormatterFromPointer(ptr).DestroyQValue3DAxisFormatterDefault()
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) ConnectDestroyQValue3DAxisFormatter(f func()) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "~QValue3DAxisFormatter"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "~QValue3DAxisFormatter", func() {
-				signal.(func())()
-				f()
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "~QValue3DAxisFormatter", f)
-		}
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) DisconnectDestroyQValue3DAxisFormatter() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "~QValue3DAxisFormatter")
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) DestroyQValue3DAxisFormatter() {
-	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_DestroyQValue3DAxisFormatter(ptr.Pointer())
-		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) DestroyQValue3DAxisFormatterDefault() {
-	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_DestroyQValue3DAxisFormatterDefault(ptr.Pointer())
-		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) Locale() *core.QLocale {
-	if ptr.Pointer() != nil {
-		tmpValue := core.NewQLocaleFromPointer(C.QValue3DAxisFormatter_Locale(ptr.Pointer()))
-		runtime.SetFinalizer(tmpValue, (*core.QLocale).DestroyQLocale)
-		return tmpValue
-	}
-	return nil
-}
-
-//export callbackQValue3DAxisFormatter_StringForValue
-func callbackQValue3DAxisFormatter_StringForValue(ptr unsafe.Pointer, value C.double, format C.struct_QtDataVisualization_PackedString) C.struct_QtDataVisualization_PackedString {
-	if signal := qt.GetSignal(ptr, "stringForValue"); signal != nil {
-		tempVal := signal.(func(float64, string) string)(float64(value), cGoUnpackString(format))
-		return C.struct_QtDataVisualization_PackedString{data: C.CString(tempVal), len: C.longlong(len(tempVal))}
-	}
-	tempVal := NewQValue3DAxisFormatterFromPointer(ptr).StringForValueDefault(float64(value), cGoUnpackString(format))
-	return C.struct_QtDataVisualization_PackedString{data: C.CString(tempVal), len: C.longlong(len(tempVal))}
-}
-
-func (ptr *QValue3DAxisFormatter) ConnectStringForValue(f func(value float64, format string) string) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "stringForValue"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "stringForValue", func(value float64, format string) string {
-				signal.(func(float64, string) string)(value, format)
-				return f(value, format)
-			})
-		} else {
-			qt.ConnectSignal(ptr.Pointer(), "stringForValue", f)
-		}
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) DisconnectStringForValue() {
-	if ptr.Pointer() != nil {
-
-		qt.DisconnectSignal(ptr.Pointer(), "stringForValue")
-	}
-}
-
-func (ptr *QValue3DAxisFormatter) StringForValue(value float64, format string) string {
-	if ptr.Pointer() != nil {
-		var formatC *C.char
-		if format != "" {
-			formatC = C.CString(format)
-			defer C.free(unsafe.Pointer(formatC))
-		}
-		return cGoUnpackString(C.QValue3DAxisFormatter_StringForValue(ptr.Pointer(), C.double(value), C.struct_QtDataVisualization_PackedString{data: formatC, len: C.longlong(len(format))}))
-	}
-	return ""
-}
-
-func (ptr *QValue3DAxisFormatter) StringForValueDefault(value float64, format string) string {
-	if ptr.Pointer() != nil {
-		var formatC *C.char
-		if format != "" {
-			formatC = C.CString(format)
-			defer C.free(unsafe.Pointer(formatC))
-		}
-		return cGoUnpackString(C.QValue3DAxisFormatter_StringForValueDefault(ptr.Pointer(), C.double(value), C.struct_QtDataVisualization_PackedString{data: formatC, len: C.longlong(len(format))}))
-	}
-	return ""
-}
-
-func (ptr *QValue3DAxisFormatter) LabelStrings() []string {
-	if ptr.Pointer() != nil {
-		return strings.Split(cGoUnpackString(C.QValue3DAxisFormatter_LabelStrings(ptr.Pointer())), "|")
-	}
-	return make([]string, 0)
+	return false
 }
 
 func (ptr *QValue3DAxisFormatter) Axis() *QValue3DAxis {
@@ -22030,7 +17817,7 @@ func (ptr *QValue3DAxisFormatter) Axis() *QValue3DAxis {
 //export callbackQValue3DAxisFormatter_CreateNewInstance
 func callbackQValue3DAxisFormatter_CreateNewInstance(ptr unsafe.Pointer) unsafe.Pointer {
 	if signal := qt.GetSignal(ptr, "createNewInstance"); signal != nil {
-		return PointerFromQValue3DAxisFormatter(signal.(func() *QValue3DAxisFormatter)())
+		return PointerFromQValue3DAxisFormatter((*(*func() *QValue3DAxisFormatter)(signal))())
 	}
 
 	return PointerFromQValue3DAxisFormatter(NewQValue3DAxisFormatterFromPointer(ptr).CreateNewInstanceDefault())
@@ -22040,12 +17827,13 @@ func (ptr *QValue3DAxisFormatter) ConnectCreateNewInstance(f func() *QValue3DAxi
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "createNewInstance"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "createNewInstance", func() *QValue3DAxisFormatter {
-				signal.(func() *QValue3DAxisFormatter)()
+			f := func() *QValue3DAxisFormatter {
+				(*(*func() *QValue3DAxisFormatter)(signal))()
 				return f()
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "createNewInstance", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "createNewInstance", f)
+			qt.ConnectSignal(ptr.Pointer(), "createNewInstance", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -22099,82 +17887,75 @@ func (ptr *QValue3DAxisFormatter) LabelPositions() []float32 {
 	return make([]float32, 0)
 }
 
-func (ptr *QValue3DAxisFormatter) SubGridPositions() []float32 {
+func (ptr *QValue3DAxisFormatter) LabelStrings() []string {
 	if ptr.Pointer() != nil {
-		return func(l C.struct_QtDataVisualization_PackedList) []float32 {
-			out := make([]float32, int(l.len))
-			tmpList := NewQValue3DAxisFormatterFromPointer(l.data)
-			for i := 0; i < len(out); i++ {
-				out[i] = tmpList.__subGridPositions_atList(i)
+		return unpackStringList(cGoUnpackString(C.QValue3DAxisFormatter_LabelStrings(ptr.Pointer())))
+	}
+	return make([]string, 0)
+}
+
+func (ptr *QValue3DAxisFormatter) Locale() *core.QLocale {
+	if ptr.Pointer() != nil {
+		tmpValue := core.NewQLocaleFromPointer(C.QValue3DAxisFormatter_Locale(ptr.Pointer()))
+		runtime.SetFinalizer(tmpValue, (*core.QLocale).DestroyQLocale)
+		return tmpValue
+	}
+	return nil
+}
+
+func (ptr *QValue3DAxisFormatter) MarkDirty(labelsChange bool) {
+	if ptr.Pointer() != nil {
+		C.QValue3DAxisFormatter_MarkDirty(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(labelsChange))))
+	}
+}
+
+//export callbackQValue3DAxisFormatter_PopulateCopy
+func callbackQValue3DAxisFormatter_PopulateCopy(ptr unsafe.Pointer, copy unsafe.Pointer) {
+	if signal := qt.GetSignal(ptr, "populateCopy"); signal != nil {
+		(*(*func(*QValue3DAxisFormatter))(signal))(NewQValue3DAxisFormatterFromPointer(copy))
+	} else {
+		NewQValue3DAxisFormatterFromPointer(ptr).PopulateCopyDefault(NewQValue3DAxisFormatterFromPointer(copy))
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) ConnectPopulateCopy(f func(copy *QValue3DAxisFormatter)) {
+	if ptr.Pointer() != nil {
+
+		if signal := qt.LendSignal(ptr.Pointer(), "populateCopy"); signal != nil {
+			f := func(copy *QValue3DAxisFormatter) {
+				(*(*func(*QValue3DAxisFormatter))(signal))(copy)
+				f(copy)
 			}
-			return out
-		}(C.QValue3DAxisFormatter_SubGridPositions(ptr.Pointer()))
-	}
-	return make([]float32, 0)
-}
-
-func (ptr *QValue3DAxisFormatter) AllowNegatives() bool {
-	if ptr.Pointer() != nil {
-		return C.QValue3DAxisFormatter_AllowNegatives(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-func (ptr *QValue3DAxisFormatter) AllowZero() bool {
-	if ptr.Pointer() != nil {
-		return C.QValue3DAxisFormatter_AllowZero(ptr.Pointer()) != 0
-	}
-	return false
-}
-
-//export callbackQValue3DAxisFormatter_MetaObject
-func callbackQValue3DAxisFormatter_MetaObject(ptr unsafe.Pointer) unsafe.Pointer {
-	if signal := qt.GetSignal(ptr, "metaObject"); signal != nil {
-		return core.PointerFromQMetaObject(signal.(func() *core.QMetaObject)())
-	}
-
-	return core.PointerFromQMetaObject(NewQValue3DAxisFormatterFromPointer(ptr).MetaObjectDefault())
-}
-
-func (ptr *QValue3DAxisFormatter) ConnectMetaObject(f func() *core.QMetaObject) {
-	if ptr.Pointer() != nil {
-
-		if signal := qt.LendSignal(ptr.Pointer(), "metaObject"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", func() *core.QMetaObject {
-				signal.(func() *core.QMetaObject)()
-				return f()
-			})
+			qt.ConnectSignal(ptr.Pointer(), "populateCopy", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "metaObject", f)
+			qt.ConnectSignal(ptr.Pointer(), "populateCopy", unsafe.Pointer(&f))
 		}
 	}
 }
 
-func (ptr *QValue3DAxisFormatter) DisconnectMetaObject() {
+func (ptr *QValue3DAxisFormatter) DisconnectPopulateCopy() {
 	if ptr.Pointer() != nil {
 
-		qt.DisconnectSignal(ptr.Pointer(), "metaObject")
+		qt.DisconnectSignal(ptr.Pointer(), "populateCopy")
 	}
 }
 
-func (ptr *QValue3DAxisFormatter) MetaObject() *core.QMetaObject {
+func (ptr *QValue3DAxisFormatter) PopulateCopy(copy QValue3DAxisFormatter_ITF) {
 	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QValue3DAxisFormatter_MetaObject(ptr.Pointer()))
+		C.QValue3DAxisFormatter_PopulateCopy(ptr.Pointer(), PointerFromQValue3DAxisFormatter(copy))
 	}
-	return nil
 }
 
-func (ptr *QValue3DAxisFormatter) MetaObjectDefault() *core.QMetaObject {
+func (ptr *QValue3DAxisFormatter) PopulateCopyDefault(copy QValue3DAxisFormatter_ITF) {
 	if ptr.Pointer() != nil {
-		return core.NewQMetaObjectFromPointer(C.QValue3DAxisFormatter_MetaObjectDefault(ptr.Pointer()))
+		C.QValue3DAxisFormatter_PopulateCopyDefault(ptr.Pointer(), PointerFromQValue3DAxisFormatter(copy))
 	}
-	return nil
 }
 
 //export callbackQValue3DAxisFormatter_PositionAt
 func callbackQValue3DAxisFormatter_PositionAt(ptr unsafe.Pointer, value C.float) C.float {
 	if signal := qt.GetSignal(ptr, "positionAt"); signal != nil {
-		return C.float(signal.(func(float32) float32)(float32(value)))
+		return C.float((*(*func(float32) float32)(signal))(float32(value)))
 	}
 
 	return C.float(NewQValue3DAxisFormatterFromPointer(ptr).PositionAtDefault(float32(value)))
@@ -22184,12 +17965,13 @@ func (ptr *QValue3DAxisFormatter) ConnectPositionAt(f func(value float32) float3
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "positionAt"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "positionAt", func(value float32) float32 {
-				signal.(func(float32) float32)(value)
+			f := func(value float32) float32 {
+				(*(*func(float32) float32)(signal))(value)
 				return f(value)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "positionAt", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "positionAt", f)
+			qt.ConnectSignal(ptr.Pointer(), "positionAt", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -22215,10 +17997,141 @@ func (ptr *QValue3DAxisFormatter) PositionAtDefault(value float32) float32 {
 	return 0
 }
 
+//export callbackQValue3DAxisFormatter_Recalculate
+func callbackQValue3DAxisFormatter_Recalculate(ptr unsafe.Pointer) {
+	if signal := qt.GetSignal(ptr, "recalculate"); signal != nil {
+		(*(*func())(signal))()
+	} else {
+		NewQValue3DAxisFormatterFromPointer(ptr).RecalculateDefault()
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) ConnectRecalculate(f func()) {
+	if ptr.Pointer() != nil {
+
+		if signal := qt.LendSignal(ptr.Pointer(), "recalculate"); signal != nil {
+			f := func() {
+				(*(*func())(signal))()
+				f()
+			}
+			qt.ConnectSignal(ptr.Pointer(), "recalculate", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "recalculate", unsafe.Pointer(&f))
+		}
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) DisconnectRecalculate() {
+	if ptr.Pointer() != nil {
+
+		qt.DisconnectSignal(ptr.Pointer(), "recalculate")
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) Recalculate() {
+	if ptr.Pointer() != nil {
+		C.QValue3DAxisFormatter_Recalculate(ptr.Pointer())
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) RecalculateDefault() {
+	if ptr.Pointer() != nil {
+		C.QValue3DAxisFormatter_RecalculateDefault(ptr.Pointer())
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) SetAllowNegatives(allow bool) {
+	if ptr.Pointer() != nil {
+		C.QValue3DAxisFormatter_SetAllowNegatives(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(allow))))
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) SetAllowZero(allow bool) {
+	if ptr.Pointer() != nil {
+		C.QValue3DAxisFormatter_SetAllowZero(ptr.Pointer(), C.char(int8(qt.GoBoolToInt(allow))))
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) SetLocale(locale core.QLocale_ITF) {
+	if ptr.Pointer() != nil {
+		C.QValue3DAxisFormatter_SetLocale(ptr.Pointer(), core.PointerFromQLocale(locale))
+	}
+}
+
+//export callbackQValue3DAxisFormatter_StringForValue
+func callbackQValue3DAxisFormatter_StringForValue(ptr unsafe.Pointer, value C.double, format C.struct_QtDataVisualization_PackedString) C.struct_QtDataVisualization_PackedString {
+	if signal := qt.GetSignal(ptr, "stringForValue"); signal != nil {
+		tempVal := (*(*func(float64, string) string)(signal))(float64(value), cGoUnpackString(format))
+		return C.struct_QtDataVisualization_PackedString{data: C.CString(tempVal), len: C.longlong(len(tempVal))}
+	}
+	tempVal := NewQValue3DAxisFormatterFromPointer(ptr).StringForValueDefault(float64(value), cGoUnpackString(format))
+	return C.struct_QtDataVisualization_PackedString{data: C.CString(tempVal), len: C.longlong(len(tempVal))}
+}
+
+func (ptr *QValue3DAxisFormatter) ConnectStringForValue(f func(value float64, format string) string) {
+	if ptr.Pointer() != nil {
+
+		if signal := qt.LendSignal(ptr.Pointer(), "stringForValue"); signal != nil {
+			f := func(value float64, format string) string {
+				(*(*func(float64, string) string)(signal))(value, format)
+				return f(value, format)
+			}
+			qt.ConnectSignal(ptr.Pointer(), "stringForValue", unsafe.Pointer(&f))
+		} else {
+			qt.ConnectSignal(ptr.Pointer(), "stringForValue", unsafe.Pointer(&f))
+		}
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) DisconnectStringForValue() {
+	if ptr.Pointer() != nil {
+
+		qt.DisconnectSignal(ptr.Pointer(), "stringForValue")
+	}
+}
+
+func (ptr *QValue3DAxisFormatter) StringForValue(value float64, format string) string {
+	if ptr.Pointer() != nil {
+		var formatC *C.char
+		if format != "" {
+			formatC = C.CString(format)
+			defer C.free(unsafe.Pointer(formatC))
+		}
+		return cGoUnpackString(C.QValue3DAxisFormatter_StringForValue(ptr.Pointer(), C.double(value), C.struct_QtDataVisualization_PackedString{data: formatC, len: C.longlong(len(format))}))
+	}
+	return ""
+}
+
+func (ptr *QValue3DAxisFormatter) StringForValueDefault(value float64, format string) string {
+	if ptr.Pointer() != nil {
+		var formatC *C.char
+		if format != "" {
+			formatC = C.CString(format)
+			defer C.free(unsafe.Pointer(formatC))
+		}
+		return cGoUnpackString(C.QValue3DAxisFormatter_StringForValueDefault(ptr.Pointer(), C.double(value), C.struct_QtDataVisualization_PackedString{data: formatC, len: C.longlong(len(format))}))
+	}
+	return ""
+}
+
+func (ptr *QValue3DAxisFormatter) SubGridPositions() []float32 {
+	if ptr.Pointer() != nil {
+		return func(l C.struct_QtDataVisualization_PackedList) []float32 {
+			out := make([]float32, int(l.len))
+			tmpList := NewQValue3DAxisFormatterFromPointer(l.data)
+			for i := 0; i < len(out); i++ {
+				out[i] = tmpList.__subGridPositions_atList(i)
+			}
+			return out
+		}(C.QValue3DAxisFormatter_SubGridPositions(ptr.Pointer()))
+	}
+	return make([]float32, 0)
+}
+
 //export callbackQValue3DAxisFormatter_ValueAt
 func callbackQValue3DAxisFormatter_ValueAt(ptr unsafe.Pointer, position C.float) C.float {
 	if signal := qt.GetSignal(ptr, "valueAt"); signal != nil {
-		return C.float(signal.(func(float32) float32)(float32(position)))
+		return C.float((*(*func(float32) float32)(signal))(float32(position)))
 	}
 
 	return C.float(NewQValue3DAxisFormatterFromPointer(ptr).ValueAtDefault(float32(position)))
@@ -22228,12 +18141,13 @@ func (ptr *QValue3DAxisFormatter) ConnectValueAt(f func(position float32) float3
 	if ptr.Pointer() != nil {
 
 		if signal := qt.LendSignal(ptr.Pointer(), "valueAt"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "valueAt", func(position float32) float32 {
-				signal.(func(float32) float32)(position)
+			f := func(position float32) float32 {
+				(*(*func(float32) float32)(signal))(position)
 				return f(position)
-			})
+			}
+			qt.ConnectSignal(ptr.Pointer(), "valueAt", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "valueAt", f)
+			qt.ConnectSignal(ptr.Pointer(), "valueAt", unsafe.Pointer(&f))
 		}
 	}
 }
@@ -22259,45 +18173,50 @@ func (ptr *QValue3DAxisFormatter) ValueAtDefault(position float32) float32 {
 	return 0
 }
 
-//export callbackQValue3DAxisFormatter_PopulateCopy
-func callbackQValue3DAxisFormatter_PopulateCopy(ptr unsafe.Pointer, copy unsafe.Pointer) {
-	if signal := qt.GetSignal(ptr, "populateCopy"); signal != nil {
-		signal.(func(*QValue3DAxisFormatter))(NewQValue3DAxisFormatterFromPointer(copy))
+//export callbackQValue3DAxisFormatter_DestroyQValue3DAxisFormatter
+func callbackQValue3DAxisFormatter_DestroyQValue3DAxisFormatter(ptr unsafe.Pointer) {
+	if signal := qt.GetSignal(ptr, "~QValue3DAxisFormatter"); signal != nil {
+		(*(*func())(signal))()
 	} else {
-		NewQValue3DAxisFormatterFromPointer(ptr).PopulateCopyDefault(NewQValue3DAxisFormatterFromPointer(copy))
+		NewQValue3DAxisFormatterFromPointer(ptr).DestroyQValue3DAxisFormatterDefault()
 	}
 }
 
-func (ptr *QValue3DAxisFormatter) ConnectPopulateCopy(f func(copy *QValue3DAxisFormatter)) {
+func (ptr *QValue3DAxisFormatter) ConnectDestroyQValue3DAxisFormatter(f func()) {
 	if ptr.Pointer() != nil {
 
-		if signal := qt.LendSignal(ptr.Pointer(), "populateCopy"); signal != nil {
-			qt.ConnectSignal(ptr.Pointer(), "populateCopy", func(copy *QValue3DAxisFormatter) {
-				signal.(func(*QValue3DAxisFormatter))(copy)
-				f(copy)
-			})
+		if signal := qt.LendSignal(ptr.Pointer(), "~QValue3DAxisFormatter"); signal != nil {
+			f := func() {
+				(*(*func())(signal))()
+				f()
+			}
+			qt.ConnectSignal(ptr.Pointer(), "~QValue3DAxisFormatter", unsafe.Pointer(&f))
 		} else {
-			qt.ConnectSignal(ptr.Pointer(), "populateCopy", f)
+			qt.ConnectSignal(ptr.Pointer(), "~QValue3DAxisFormatter", unsafe.Pointer(&f))
 		}
 	}
 }
 
-func (ptr *QValue3DAxisFormatter) DisconnectPopulateCopy() {
+func (ptr *QValue3DAxisFormatter) DisconnectDestroyQValue3DAxisFormatter() {
 	if ptr.Pointer() != nil {
 
-		qt.DisconnectSignal(ptr.Pointer(), "populateCopy")
+		qt.DisconnectSignal(ptr.Pointer(), "~QValue3DAxisFormatter")
 	}
 }
 
-func (ptr *QValue3DAxisFormatter) PopulateCopy(copy QValue3DAxisFormatter_ITF) {
+func (ptr *QValue3DAxisFormatter) DestroyQValue3DAxisFormatter() {
 	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_PopulateCopy(ptr.Pointer(), PointerFromQValue3DAxisFormatter(copy))
+		C.QValue3DAxisFormatter_DestroyQValue3DAxisFormatter(ptr.Pointer())
+		ptr.SetPointer(nil)
+		runtime.SetFinalizer(ptr, nil)
 	}
 }
 
-func (ptr *QValue3DAxisFormatter) PopulateCopyDefault(copy QValue3DAxisFormatter_ITF) {
+func (ptr *QValue3DAxisFormatter) DestroyQValue3DAxisFormatterDefault() {
 	if ptr.Pointer() != nil {
-		C.QValue3DAxisFormatter_PopulateCopyDefault(ptr.Pointer(), PointerFromQValue3DAxisFormatter(copy))
+		C.QValue3DAxisFormatter_DestroyQValue3DAxisFormatterDefault(ptr.Pointer())
+		ptr.SetPointer(nil)
+		runtime.SetFinalizer(ptr, nil)
 	}
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -67,15 +68,27 @@ func main() {
 	if target == "desktop" {
 		target = runtime.GOOS
 	}
+	utils.CheckBuildTarget(target, docker)
+	cmd.InitEnv(target)
 
 	if !filepath.IsAbs(path) {
+		oPath := path
 		path, err = filepath.Abs(path)
-		if err != nil {
-			utils.Log.WithError(err).WithField("path", path).Fatal("can't resolve absolute path")
+		if err != nil || !utils.ExistsDir(path) {
+			utils.Log.WithError(err).WithField("path", path).Debug("can't resolve absolute path")
+			dirFunc := func() (string, error) {
+				out, err := utils.RunCmdOptionalError(utils.GoList("{{.Dir}}", oPath, "-find"), "get pkg dir")
+				return strings.TrimSpace(out), err
+			}
+			if dir, err := dirFunc(); err != nil || len(dir) == 0 {
+				utils.RunCmd(exec.Command("go", "get", "-d", "-v", oPath), "go get pkg")
+				path, _ = dirFunc()
+			} else {
+				path = dir
+			}
 		}
 	}
 
-	utils.CheckBuildTarget(target)
 	switch {
 	case docker:
 		cmd.Docker([]string{"qtminimal", "-debug", "-tags=" + tags}, target, path, false)

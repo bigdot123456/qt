@@ -99,9 +99,7 @@ func (c *Class) GetAllBasesRecursiveCheckFailed(i int) ([]string, bool) {
 		if isRecursive {
 			return input, true
 		}
-		for _, sbc := range bs {
-			input = append(input, sbc)
-		}
+		input = append(input, bs...)
 	}
 
 	return input, false
@@ -137,10 +135,7 @@ func (c *Class) GetAllDerivations() []string {
 			continue
 		}
 
-		input = append(input, b)
-		for _, sbc := range bc.GetAllDerivations() {
-			input = append(input, sbc)
-		}
+		input = append(append(input, b), bc.GetAllDerivations()...)
 	}
 
 	return input
@@ -186,7 +181,9 @@ func (c *Class) HasFunctionWithName(n string) bool {
 
 func (c *Class) HasFunctionWithNameAndOverloadNumber(n string, num string) bool {
 	for _, f := range c.Functions {
-		if strings.ToLower(f.Name) == strings.ToLower(n) && f.OverloadNumber == num {
+		if ((strings.ToLower(f.Name) == strings.ToLower(n) && c.Module != MOC) ||
+			(f.Name == n && c.Module == MOC)) &&
+			f.OverloadNumber == num {
 			return true
 		}
 	}
@@ -228,8 +225,30 @@ func (c *Class) HasCallbackFunctions() bool {
 	return false
 }
 
+func (c *Class) HasCallbackFunctionsBesideTheDestructor() bool {
+	for _, bcn := range append([]string{c.Name}, c.GetAllBases()...) {
+		var bc, ok = State.ClassMap[bcn]
+		if !ok {
+			continue
+		}
+		for _, f := range bc.Functions {
+			if (f.Virtual == IMPURE || f.Virtual == PURE || f.Meta == SIGNAL || f.Meta == SLOT) && f.Meta != DESTRUCTOR {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *Class) IsSupported() bool {
 	if c == nil {
+		return false
+	}
+
+	switch c.Name {
+	case "QCborStreamReader", "QCborStreamWriter", "QCborValue", "QScopeGuard", "QTest",
+		"QImageReaderWriterHelpers", "QPasswordDigestor", "QDtls", "QDtlsClientVerifier", "QGeoJson":
+		c.Access = "unsupported_isBlockedClass"
 		return false
 	}
 
@@ -244,14 +263,15 @@ func (c *Class) IsSupported() bool {
 	}
 
 	if UseJs() {
-		if strings.HasPrefix(c.Name, "QSG") {
+		if strings.HasPrefix(c.Name, "QOpenGLFunctions_") || strings.HasPrefix(c.Name, "QSsl") || strings.HasPrefix(c.Name, "QNetwork") {
 			c.Access = "unsupported_isBlockedClass"
 			return false
 		}
 		switch c.Name {
 		case "QThreadPool", "QSharedMemory", "QPluginLoader", "QSemaphore", "QSemaphoreReleaser",
 			"QSystemSemaphore", "QThread", "QWaitCondition", "QUnhandledException", "QFileSystemModel",
-			"QLibrary":
+			"QLibrary", "QUdpSocket", "QHttpMultiPart", "QHttpPart", "QOpenGLTimeMonitor", "QOpenGLTimerQuery",
+			"QRemoteObjectHost": //TODO: only block in 5.11 ?
 			{
 				c.Access = "unsupported_isBlockedClass"
 				return false
@@ -285,8 +305,26 @@ func (c *Class) IsSupported() bool {
 
 		"QtROClientFactory", "QtROServerFactory",
 
-		"QWebViewFactory", "QGeoServiceProviderFactoryV2":
+		"QWebViewFactory", "QGeoServiceProviderFactoryV2",
+
+		"QtDwmApiDll", "QWinMime",
+
+		"QAbstract3DGraph", //TODO: only block for arch with pkg_config
+
+		"QQuickFolderListModel", "QFileDialogOptions", "QMessageDialogOptions",
+		"QGeoServiceProviderFactoryV3", "QTextToSpeechProcessorFlite", "QOpenVGMatrix",
+		"QSvgIOHandler", "QSvgIconEngine", "QQuickProfilerAdapter",
+		"QWavefrontMesh", "QM3uPlaylistPlugin", "QOpenSLESAudioInput",
+		"QSGSimpleMaterialComparableMaterial", "QGStreamerAvailabilityControl",
+		"QGstreamerV4L2Input":
 		{
+			c.Access = "unsupported_isBlockedClass"
+			return false
+		}
+	}
+
+	for _, cn := range []string{"QTextToSpeechPlugin", "QTextToSpeechEngine"} {
+		if strings.HasPrefix(c.Name, cn) && c.Name != cn {
 			c.Access = "unsupported_isBlockedClass"
 			return false
 		}
@@ -300,15 +338,31 @@ func (c *Class) IsSupported() bool {
 
 		strings.HasSuffix(c.Name, "terator"), strings.Contains(c.Brief, "emplate"), //needs template
 
-		strings.HasPrefix(c.Name, "QVulkan"):
+		strings.HasPrefix(c.Name, "QVulkan"),
 
+		!strings.HasPrefix(c.Name, "Q") && strings.HasPrefix(c.Module, "Qt") && c.Module != "QtSailfish" && c.Name != "PaintContext",
+		strings.HasPrefix(c.Name, "Qml") && c.Module == "QtSensors",
+		strings.HasPrefix(c.Name, "QQml") && (c.Module == "QtQuick" || c.Module == "QtWebSockets"),
+		strings.HasPrefix(c.Name, "QAndroid") && strings.HasPrefix(c.Module, "QtMultimedia"),
+		strings.HasPrefix(c.Name, "QDesigner") && !(strings.HasSuffix(c.Name, "Interface") || strings.HasSuffix(c.Name, "Extension")) && c.Module == "QtDesigner",
+		strings.HasPrefix(c.Name, "QV4") && c.Module == "QtQuick",
+		strings.HasPrefix(c.Name, "QSG") && (strings.HasPrefix(c.Module, "QtMultimedia") || (strings.Contains(c.Name, "Cache") && c.Module == "QtQuick")),
+		strings.HasPrefix(c.Name, "QSGOpenVG") && c.Module == "QtQuick",
+		strings.HasPrefix(c.Name, "QPlatform") && (c.Module == "QtGui" || c.Module == "QtPrintSupport") && c.Name != "QPlatformSurfaceEvent",
+		strings.HasPrefix(c.Name, "QAlsa") && strings.HasPrefix(c.Module, "QtMultimedia"),
+		strings.Contains(c.Name, "Qnx") && (strings.HasPrefix(c.Module, "QtMultimedia") || c.Module == "QtRemoteObjects"),
+		(strings.HasPrefix(c.Name, "QGstreamer") || strings.HasPrefix(c.Name, "QWin") ||
+			strings.HasPrefix(c.Name, "QPulse") || strings.HasPrefix(c.Name, "QOpenSLES") ||
+			strings.HasPrefix(c.Name, "QWasapi")) && strings.HasPrefix(c.Module, "QtMultimedia"):
 		{
-			c.Access = "unsupported_isBlockedClass"
-			return false
+			if c.Module != MOC {
+				c.Access = "unsupported_isBlockedClass"
+				return false
+			}
 		}
 	}
 
-	if strings.HasPrefix(c.Name, "QOpenGL") && (os.Getenv("DEB_TARGET_ARCH_CPU") == "arm" || UseJs()) {
+	if strings.HasPrefix(c.Name, "QOpenGL") && (os.Getenv("DEB_TARGET_ARCH_CPU") == "arm" || (strings.HasPrefix(State.Target, "android") && utils.QT_FAT())) { //TODO: block indiv classes for fat android build instead
 		c.Access = "unsupported_isBlockedClass"
 		return false
 	}
@@ -321,6 +375,11 @@ func (c *Class) IsSupported() bool {
 			c.Access = "unsupported_isBlockedClass"
 			return false
 		}
+	}
+
+	if strings.HasPrefix(c.Name, "QOpenGLFunctions_") && !utils.QT_GEN_OPENGL() {
+		c.Access = "unsupported_isBlockedClass"
+		return false
 	}
 
 	if State.Minimal {

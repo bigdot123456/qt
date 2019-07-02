@@ -2,6 +2,7 @@ package setup
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -20,7 +21,22 @@ func Generate(target string, docker, vagrant bool) {
 		return
 	}
 
-	parser.LoadModules()
+	parser.LoadModules(target)
+
+	mode := "full"
+	switch {
+	case target == "js", target == "wasm":
+
+	case target != runtime.GOOS:
+		mode = "cgo"
+
+	case utils.QT_STUB():
+		mode = "stub"
+	}
+
+	if target == "windows" && runtime.GOOS == target {
+		os.Setenv("QT_DEBUG_CONSOLE", "true")
+	}
 
 	for _, module := range parser.GetLibs() {
 		if !parser.ShouldBuildForTarget(module, target) {
@@ -28,25 +44,20 @@ func Generate(target string, docker, vagrant bool) {
 			continue
 		}
 
-		mode := "full"
-		switch {
-		case target == "js":
-
-		case target != runtime.GOOS:
-			mode = "cgo"
-
-		case utils.QT_STUB():
-			mode = "stub"
+		var license string
+		switch module {
+		case "Charts", "DataVisualization", "VirtualKeyboard":
+			license = strings.Repeat(" ", 21-len(module)) + "[GPLv3]"
 		}
-		utils.Log.Infof("generating %v qt/%v", mode, strings.ToLower(module))
+		utils.Log.Infof("generating %v qt/%v%v", mode, strings.ToLower(module), license)
 
-		if target == runtime.GOOS || utils.QT_FAT() || (mode == "full" && target == "js") { //TODO: REVIEW
+		if target == runtime.GOOS || utils.QT_FAT() || (mode == "full" && (target == "js" || target == "wasm")) { //TODO: REVIEW
 			templater.GenModule(module, target, templater.NONE)
 		} else {
 			templater.CgoTemplate(module, "", target, templater.MINIMAL, "", "") //TODO: collect errors
 		}
 
-		if utils.QT_DYNAMIC_SETUP() && mode == "full" && target != "js" {
+		if utils.QT_DYNAMIC_SETUP() && mode == "full" && (target != "js" && target != "wasm") {
 			cc, _ := templater.ParseCgo(strings.ToLower(module), target)
 			if cc != "" {
 				cmd := exec.Command("go", "tool", "cgo", utils.GoQtPkgPath(strings.ToLower(module), strings.ToLower(module)+".go"))

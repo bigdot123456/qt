@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 )
 
 var exportedFunctions []string
+var CleanupDepsForCI = func() {}
 
 func CppTemplate(module string, mode int, target, tags string) []byte {
 	utils.Log.WithField("module", module).Debug("generating cpp")
@@ -102,13 +104,13 @@ func CppTemplate(module string, mode int, target, tags string) []byte {
 
 					func() string {
 						if mode == MOC {
-							var bb = new(bytes.Buffer)
+							bb := new(bytes.Buffer)
 							defer bb.Reset()
 							fmt.Fprintln(bb, "Q_OBJECT")
 
 							for _, p := range class.Properties {
 
-								var ty = p.Output
+								ty := p.Output
 								if parser.IsPackedMap(p.Output) {
 									var tHash = sha1.New()
 									tHash.Write([]byte(p.Output))
@@ -135,7 +137,7 @@ func CppTemplate(module string, mode int, target, tags string) []byte {
 							continue
 						}
 
-						var out = fmt.Sprintf("\t%v%v(%v) : %v(%v) {%v};\n",
+						out := fmt.Sprintf("\t%v%v(%v) : %v(%v) {%v};\n",
 							func() string {
 								if mode == MOC {
 									return ""
@@ -201,7 +203,7 @@ func CppTemplate(module string, mode int, target, tags string) []byte {
 				}
 
 				//callback functions
-				var implementedVirtuals = make(map[string]struct{})
+				implementedVirtuals := make(map[string]struct{})
 				for i, parentClassName := range append([]string{class.Name}, class.GetAllBases()...) {
 					var parentClass, e = parser.State.ClassMap[parentClassName]
 					if !e || !parentClass.IsSupported() {
@@ -230,7 +232,9 @@ func CppTemplate(module string, mode int, target, tags string) []byte {
 						f.Fullname = fmt.Sprintf("%v::%v", f.FindDeepestImplementation(), f.Name)
 
 						if f.Meta == parser.SLOT || f.Meta == parser.SIGNAL || f.Virtual == parser.IMPURE || f.Virtual == parser.PURE {
-							fmt.Fprintf(bb, "\t%v\n", cppFunctionCallback(&f))
+							if fb := cppFunctionCallback(&f); len(fb) != 0 {
+								fmt.Fprintf(bb, "\t%v\n", fb)
+							}
 						}
 					}
 				}
@@ -282,14 +286,18 @@ func CppTemplate(module string, mode int, target, tags string) []byte {
 						if function.Meta == parser.SIGNAL {
 							var function = *function
 							function.Meta = parser.SLOT
-							fmt.Fprintf(bb, "\t%v;\n", cppFunctionCallbackHeader(&function))
+							if fb := cppFunctionCallbackHeader(&function); len(fb) != 0 {
+								fmt.Fprintf(bb, "\t%v;\n", fb)
+							}
 						}
 					}
 
 					fmt.Fprintln(bb, "public slots:")
 					for _, function := range class.Functions {
 						if function.Meta == parser.SLOT {
-							fmt.Fprintf(bb, "\t%v\n", cppFunctionCallback(function))
+							if fb := cppFunctionCallback(function); len(fb) != 0 {
+								fmt.Fprintf(bb, "\t%v\n", fb)
+							}
 						}
 					}
 
@@ -324,18 +332,24 @@ func CppTemplate(module string, mode int, target, tags string) []byte {
 						fmt.Fprintf(bb, "int %[1]v_%[1]v_QRegisterMetaType(){qRegisterMetaType<%[1]v*>(); return qRegisterMetaType<My%[1]v*>();}\n\n", class.Name)
 					}
 				} else {
-					var typeMap = make(map[string]string)
+					typeMap := make(map[string]string)
 					for _, f := range class.Functions {
 						if parser.IsPackedMap(f.Output) {
 							var tHash = sha1.New()
 							tHash.Write([]byte(f.Output))
 							typeMap[f.Output] = hex.EncodeToString(tHash.Sum(nil)[:3])
 						}
+						if parser.IsPackedList(f.Output) {
+							typeMap[f.Output] = "QList<QObject*>"
+						}
 						for _, p := range f.Parameters {
 							if parser.IsPackedMap(p.Value) {
 								var tHash = sha1.New()
 								tHash.Write([]byte(p.Value))
 								typeMap[p.Value] = hex.EncodeToString(tHash.Sum(nil)[:3])
+							}
+							if parser.IsPackedList(p.Value) {
+								typeMap[p.Value] = "QList<QObject*>"
 							}
 						}
 					}
@@ -346,6 +360,9 @@ func CppTemplate(module string, mode int, target, tags string) []byte {
 							var tHash = sha1.New()
 							tHash.Write([]byte(p.Output))
 							typeMap[p.Output] = hex.EncodeToString(tHash.Sum(nil)[:3])
+						}
+						if parser.IsPackedList(p.Output) {
+							typeMap[p.Output] = "QList<QObject*>"
 						}
 						if o := converter.CppRegisterMetaTypeProp(p); o != "" {
 							propTypes[o] = struct{}{}
@@ -358,15 +375,23 @@ func CppTemplate(module string, mode int, target, tags string) []byte {
 							hash == "d01680" || //QHash<qint32, QByteArray>
 							hash == "d15f9e" || //QMap<quintptr, quintptr>
 							hash == "cc064b" || //QMap<qint32, quintptr>
-							hash == "378cdd" { //QMap<qint32, QByteArray>
+							hash == "378cdd" || //QMap<qint32, QByteArray>
+							hash == "424d06" || //QMap<QString, QVariant>
+							hash == "QList<QObject*>" {
 							continue
 						}
 						fmt.Fprintf(bb, "Q_DECLARE_METATYPE(type%v)\n", hash)
 					}
 
 					fmt.Fprintf(bb, "\nvoid %[1]v_%[1]v_QRegisterMetaTypes() {\n", class.Name)
-					for _, hash := range typeMap {
-						fmt.Fprintf(bb, "\tqRegisterMetaType<type%v>(\"type%v\");\n", hash, hash)
+					for out, hash := range typeMap {
+						if parser.IsPackedList(out) {
+							if up := parser.UnpackedList(out); parser.State.ClassMap[up].IsSubClassOfQObject() && up != "QObject" {
+								fmt.Fprintf(bb, "\tqRegisterMetaType<%v>(\"%v\");\n", hash, out)
+							}
+						} else {
+							fmt.Fprintf(bb, "\tqRegisterMetaType<type%[1]v>(\"type%[1]v\");\n", hash)
+						}
 					}
 					for t := range propTypes {
 						fmt.Fprintf(bb, "\tqRegisterMetaType<%v>();\n", t)
@@ -402,7 +427,7 @@ func CppTemplate(module string, mode int, target, tags string) []byte {
 		deferredFunctions = nil
 
 		rand.Seed(time.Now().UTC().UnixNano())
-		fmt.Fprintf(bb, "EMSCRIPTEN_BINDINGS(r%v) {\n", rand.Intn(10000000))
+		fmt.Fprintf(bb, "EMSCRIPTEN_BINDINGS(r%v) {\n", rand.Intn(math.MaxInt32)) //TODO: use deterministic hash instead
 
 		sort.Stable(sort.StringSlice(exportedFunctions))
 
@@ -431,7 +456,7 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 	defer bb.Reset()
 
 	if mode == MOC {
-		libsm := make(map[string]struct{}, 0)
+		libsm := make(map[string]struct{})
 		for _, c := range parser.State.ClassMap {
 			if c.Pkg != "" && c.IsSubClassOfQObject() {
 				libsm[c.Module] = struct{}{}
@@ -546,8 +571,8 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 		}(),
 
 		func() string {
-			if module == "QtMultimedia" {
-				return "\n#include \"private/qvideoframe_p.h\""
+			if utils.QT_DEBUG_CPP() {
+				return "\n#include <QDebug>\n"
 			}
 			return ""
 		}(),
@@ -555,7 +580,15 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 
 	var classes = make([]string, 0)
 	for _, class := range parser.State.ClassMap {
-		if strings.Contains(string(input), class.Name) && class.Module != parser.MOC {
+		if (bytes.Contains(input, []byte(class.Name+";")) ||
+			bytes.Contains(input, []byte(class.Name+":")) ||
+			bytes.Contains(input, []byte(class.Name+"*")) ||
+			bytes.Contains(input, []byte(class.Name+" ")) ||
+			bytes.Contains(input, []byte(class.Name+"<")) ||
+			bytes.Contains(input, []byte(class.Name+">")) ||
+			bytes.Contains(input, []byte(class.Name+"(")) ||
+			bytes.Contains(input, []byte(class.Name+")")) ||
+			bytes.Contains(input, []byte(class.Name+"_"))) && class.Module != parser.MOC {
 			classes = append(classes, class.Name)
 		}
 	}
@@ -566,7 +599,9 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 			fmt.Fprint(bb, "#include <sailfishapp.h>\n")
 		} else {
 			var c, _ = parser.State.ClassMap[class]
-			if strings.HasPrefix(c.Module, "custom_") {
+			if strings.HasPrefix(c.Module, "custom_") ||
+				strings.ToLower(c.Module) == c.Module ||
+				!strings.HasPrefix(class, "Q") {
 				continue
 			}
 			switch c.Name {
@@ -582,17 +617,13 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 				"QSql",
 				"QTest",
 				"QWebSocketProtocol",
-				"OSXBluetooth",
 				"QBluetooth",
-				"PaintContext",
 				"QPlatformGraphicsBuffer",
 				"QDBusPendingReplyTypes",
 				"QRemoteObjectPackets",
 				"QRemoteObjectStringLiterals",
-				"ui",
 				"QStringList",
 				"QtDwmApiDll",
-				"content",
 				"QStringView":
 				{
 					continue
@@ -631,11 +662,11 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 
 			fmt.Fprintf(bb, "#include <%v>\n", class)
 
-			if (strings.HasPrefix(target, "ios") || target == "js") && mode == MINIMAL {
+			if (strings.HasPrefix(target, "ios") || target == "js" || target == "wasm") && mode == MINIMAL {
 				oldModuleGo := strings.TrimPrefix(c.Module, "Qt")
 
 				var containsSelf bool
-				for _, l := range parser.LibDeps["build_ios"] {
+				for _, l := range parser.LibDeps["build_static"] {
 					if l == oldModuleGo {
 						containsSelf = true
 						break
@@ -643,19 +674,20 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 				}
 
 				if !containsSelf {
-					parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], oldModuleGo)
+					parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], oldModuleGo)
 
 					switch oldModuleGo {
 					case "Multimedia":
-						parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], "MultimediaWidgets")
+						parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], "MultimediaWidgets")
 					case "Quick":
-						parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], "QuickWidgets")
+						parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], "QuickWidgets")
 					}
 				}
 			}
 
 			if mode == MOC {
 				var found bool
+				parser.LibDepsMutex.Lock()
 				for _, m := range parser.LibDeps[parser.MOC] {
 					if m == strings.TrimPrefix(c.Module, "Qt") {
 						found = true
@@ -665,24 +697,25 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 				if !found {
 					parser.LibDeps[parser.MOC] = append(parser.LibDeps[parser.MOC], strings.TrimPrefix(c.Module, "Qt"))
 				}
+				parser.LibDepsMutex.Unlock()
 
-				if target == "js" {
+				if target == "js" || target == "wasm" {
 
 					found = false
-					for _, m := range parser.LibDeps["build_ios"] {
+					for _, m := range parser.LibDeps["build_static"] {
 						if m == strings.TrimPrefix(c.Module, "Qt") {
 							found = true
 							break
 						}
 					}
 					if !found {
-						parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], strings.TrimPrefix(c.Module, "Qt"))
+						parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], strings.TrimPrefix(c.Module, "Qt"))
 
 						switch strings.TrimPrefix(c.Module, "Qt") {
 						case "Multimedia":
-							parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], "MultimediaWidgets")
+							parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], "MultimediaWidgets")
 						case "Quick":
-							parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], "QuickWidgets")
+							parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], "QuickWidgets")
 						}
 					}
 				}
@@ -697,13 +730,33 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 
 			utils.Log.Debugf("%v add dependency: %v", module, c.Module)
 			parser.LibDeps[strings.TrimPrefix(module, "Qt")] = append(parser.LibDeps[strings.TrimPrefix(module, "Qt")], strings.TrimPrefix(c.Module, "Qt"))
+			old := CleanupDepsForCI
+			CleanupDepsForCI = func() {
+				parser.LibDeps[strings.TrimPrefix(module, "Qt")] = parser.LibDeps[strings.TrimPrefix(module, "Qt")][:len(parser.LibDeps[strings.TrimPrefix(module, "Qt")])-1]
+				old()
+			}
 			switch c.Module {
 			case "QtMultimedia":
 				parser.LibDeps[strings.TrimPrefix(module, "Qt")] = append(parser.LibDeps[strings.TrimPrefix(module, "Qt")], "MultimediaWidgets")
+				old := CleanupDepsForCI
+				CleanupDepsForCI = func() {
+					parser.LibDeps[strings.TrimPrefix(module, "Qt")] = parser.LibDeps[strings.TrimPrefix(module, "Qt")][:len(parser.LibDeps[strings.TrimPrefix(module, "Qt")])-1]
+					old()
+				}
 			case "QtWebEngine":
 				parser.LibDeps[strings.TrimPrefix(module, "Qt")] = append(parser.LibDeps[strings.TrimPrefix(module, "Qt")], "WebEngineWidgets")
+				old := CleanupDepsForCI
+				CleanupDepsForCI = func() {
+					parser.LibDeps[strings.TrimPrefix(module, "Qt")] = parser.LibDeps[strings.TrimPrefix(module, "Qt")][:len(parser.LibDeps[strings.TrimPrefix(module, "Qt")])-1]
+					old()
+				}
 			case "QtQuick":
 				parser.LibDeps[strings.TrimPrefix(module, "Qt")] = append(parser.LibDeps[strings.TrimPrefix(module, "Qt")], "QuickWidgets")
+				old := CleanupDepsForCI
+				CleanupDepsForCI = func() {
+					parser.LibDeps[strings.TrimPrefix(module, "Qt")] = parser.LibDeps[strings.TrimPrefix(module, "Qt")][:len(parser.LibDeps[strings.TrimPrefix(module, "Qt")])-1]
+					old()
+				}
 			}
 		}
 	}
@@ -726,7 +779,17 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 		}
 	}
 
+	if mode == MOC {
+		fmt.Fprint(bb, "\n#ifdef QT_QML_LIB\n\t#include <QQmlEngine>\n#endif\n")
+	}
+
 	fmt.Fprint(bb, "\n")
+
+	for _, class := range parser.State.ClassMap {
+		if class.Fullname != "" && bytes.Contains(input, []byte("<"+class.Name)) {
+			fmt.Fprintf(bb, "typedef %v %v;\n", class.Fullname, class.Name)
+		}
+	}
 
 	bb.Write(input)
 
@@ -734,7 +797,7 @@ func preambleCpp(module string, input []byte, mode int, target, tags string) []b
 	if mode == MOC {
 		pre := bb.String()
 		bb.Reset()
-		libsm := make(map[string]struct{}, 0)
+		libsm := make(map[string]struct{})
 		for _, c := range parser.State.ClassMap {
 			if c.Pkg != "" && c.IsSubClassOfQObject() {
 				libsm[c.Module] = struct{}{}

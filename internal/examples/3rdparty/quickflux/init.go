@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -16,22 +17,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	if _, err := ioutil.ReadDir("quickflux"); err == nil {
-		println("quickflux already cloned")
-		os.Exit(1)
-	}
-
-	if out, err := exec.Command("git", "clone", "https://github.com/benlau/quickflux.git").CombinedOutput(); err != nil {
-		println("failed to clone quickflux", err.Error())
-		println(string(out))
-		os.Exit(1)
-	}
-	println("cloned quickflux")
-
 	pwd, pwdErr := os.Getwd()
 	if pwdErr != nil {
 		println("failed to get PWD", pwdErr.Error())
 		os.Exit(1)
+	}
+
+	if _, err := os.Stat("quickflux"); err == nil {
+		println("quickflux already cloned")
+	} else {
+		if out, err := exec.Command("git", "clone", "--depth=1", "https://github.com/benlau/quickflux.git").CombinedOutput(); err != nil {
+			println("failed to clone quickflux", err.Error())
+			println(string(out))
+			os.Exit(1)
+		}
+		println("cloned quickflux")
 	}
 
 	pri, priErr := ioutil.ReadFile(filepath.Join(pwd, "quickflux", "quickflux.pri"))
@@ -39,21 +39,23 @@ func main() {
 		println("failed to patch quickflux.pri", priErr.Error())
 		os.Exit(1)
 	}
-	ioutil.WriteFile(filepath.Join(pwd, "quickflux", "quickflux.pri"), []byte("QT += qml quick\n"+string(pri)), 0644)
-	println("patched quickflux.pri")
+	if !bytes.Contains(pri, []byte("QT += qml quick")) {
+		ioutil.WriteFile(filepath.Join(pwd, "quickflux", "quickflux.pri"), append([]byte("QT += qml quick\n"), pri), 0644)
+		println("patched quickflux.pri")
+	}
 
 	for _, target := range []string{runtime.GOOS} {
 
 		var qmake string
 		switch target {
 		case "darwin":
-			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.11.1", "clang_64", "bin", "qmake")
+			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.13.0", "clang_64", "bin", "qmake")
 
 		case "linux":
-			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.11.1", "gcc_64", "bin", "qmake")
+			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.13.0", "gcc_64", "bin", "qmake")
 
 		case "android":
-			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.11.1", "android_armv7", "bin", "qmake")
+			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.13.0", "android_armv7", "bin", "qmake")
 		}
 
 		qCmd := exec.Command(qmake, filepath.Join(pwd, "quickflux", "quickflux.pri"))
@@ -94,8 +96,8 @@ func main() {
 		}
 		for _, file := range files {
 			if !file.IsDir() {
-				exec.Command("sed", "-i", "''", "-e", "'s!./priv/!!g'", filepath.Join(pwd, "quickflux", file.Name())).Run()
-				exec.Command("sed", "-i", "''", "-e", "'s!priv/!!g'", filepath.Join(pwd, "quickflux", file.Name())).Run()
+				exec.Command("sed", "-i", "''", "-e", "s!./priv/!!g", filepath.Join(pwd, "quickflux", file.Name())).Run()
+				exec.Command("sed", "-i", "''", "-e", "s!priv/!!g", filepath.Join(pwd, "quickflux", file.Name())).Run()
 			}
 		}
 		println("patched *.h and *.cpp in quickflux for", target)

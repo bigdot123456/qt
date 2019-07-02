@@ -3,7 +3,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,22 +15,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	if _, err := ioutil.ReadDir("fluid"); err == nil {
-		println("fluid already cloned")
-		os.Exit(1)
-	}
-
-	if out, err := exec.Command("git", "clone", "https://github.com/lirios/fluid.git").CombinedOutput(); err != nil {
-		println("failed to clone fluid", err.Error())
-		println(string(out))
-		os.Exit(1)
-	}
-	println("cloned fluid")
-
 	pwd, pwdErr := os.Getwd()
 	if pwdErr != nil {
 		println("failed to get PWD", pwdErr.Error())
 		os.Exit(1)
+	}
+
+	if _, err := os.Stat("fluid"); err == nil {
+		println("fluid already cloned")
+	} else {
+		if out, err := exec.Command("git", "clone", "--depth=1", "https://github.com/lirios/fluid.git").CombinedOutput(); err != nil {
+			println("failed to clone fluid", err.Error())
+			println(string(out))
+			os.Exit(1)
+		}
+		println("cloned fluid")
 	}
 
 	sCmd := exec.Command("git", "submodule", "update", "--init")
@@ -46,16 +44,23 @@ func main() {
 	for _, target := range []string{runtime.GOOS, "android"} {
 		os.MkdirAll(filepath.Join(pwd, "fluid", target), 0755)
 
+		if target == "android" {
+			if _, ok := os.LookupEnv("ANDROID_NDK_DIR"); !ok {
+				println("please export ANDROID_NDK_DIR")
+				os.Exit(1)
+			}
+		}
+
 		var qmake string
 		switch target {
 		case "darwin":
-			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.11.1", "clang_64", "bin", "qmake")
+			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.13.0", "clang_64", "bin", "qmake")
 
 		case "linux":
-			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.11.1", "gcc_64", "bin", "qmake")
+			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.13.0", "gcc_64", "bin", "qmake")
 
 		case "android":
-			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.11.1", "android_armv7", "bin", "qmake")
+			qmake = filepath.Join(os.Getenv("QT_DIR"), "5.13.0", "android_armv7", "bin", "qmake")
 		}
 
 		ndkPATH, ndkOK := os.LookupEnv("ANDROID_NDK_DIR")

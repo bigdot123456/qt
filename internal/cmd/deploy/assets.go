@@ -3,15 +3,12 @@ package deploy
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"golang.org/x/crypto/ssh"
 
 	"github.com/therecipe/qt/internal/cmd/rcc"
 	"github.com/therecipe/qt/internal/utils"
@@ -32,27 +29,29 @@ func linux_sh(target, name string) string {
 	fmt.Fprint(bb, "fi\n")
 
 	if strings.HasPrefix(target, "rpi") {
-		fmt.Fprint(bb, "export DISPLAY=:0\n")
-		fmt.Fprint(bb, "export LD_PRELOAD=\"/opt/vc/lib/libGLESv2.so /opt/vc/lib/libEGL.so\"\n")
+		fmt.Fprint(bb, "export DISPLAY=\":0\"\n")
+		if !utils.QT_RPI() {
+			fmt.Fprint(bb, "export LD_PRELOAD=\"/opt/vc/lib/libGLESv2.so /opt/vc/lib/libEGL.so\"\n")
+		}
 	}
 
 	if utils.QT_PKG_CONFIG() {
 		libDir := strings.TrimSpace(utils.RunCmd(exec.Command("pkg-config", "--variable=libdir", "Qt5Core"), fmt.Sprintf("get lib dir for %v on %v", target, runtime.GOOS)))
 		miscDir := utils.QT_MISC_DIR()
 
-		fmt.Fprintf(bb, "export LD_LIBRARY_PATH=%v\n", libDir)
-		fmt.Fprintf(bb, "export QT_PLUGIN_PATH=$%v\n", filepath.Join(miscDir, "plugins"))
-		fmt.Fprintf(bb, "export QML_IMPORT_PATH=%v\n", filepath.Join(miscDir, "qml"))
-		fmt.Fprintf(bb, "export QML2_IMPORT_PATH=%v\n", filepath.Join(miscDir, "qml"))
+		fmt.Fprintf(bb, "export LD_LIBRARY_PATH=\"%v\"\n", libDir)
+		fmt.Fprintf(bb, "export QT_PLUGIN_PATH=\"%v\"\n", filepath.Join(miscDir, "plugins"))
+		fmt.Fprintf(bb, "export QML_IMPORT_PATH=\"%v\"\n", filepath.Join(miscDir, "qml"))
+		fmt.Fprintf(bb, "export QML2_IMPORT_PATH=\"%v\"\n", filepath.Join(miscDir, "qml"))
 	} else {
 		libDir := "lib"
 		if name == libDir {
 			libDir = "libs"
 		}
-		fmt.Fprint(bb, "export LD_LIBRARY_PATH=$dirname/"+libDir+"\n")
-		fmt.Fprint(bb, "export QT_PLUGIN_PATH=$dirname/plugins\n")
-		fmt.Fprint(bb, "export QML_IMPORT_PATH=$dirname/qml\n")
-		fmt.Fprint(bb, "export QML2_IMPORT_PATH=$dirname/qml\n")
+		fmt.Fprintf(bb, "export LD_LIBRARY_PATH=\"$dirname/%v\"\n", libDir)
+		fmt.Fprint(bb, "export QT_PLUGIN_PATH=\"$dirname/plugins\"\n")
+		fmt.Fprint(bb, "export QML_IMPORT_PATH=\"$dirname/qml\"\n")
+		fmt.Fprint(bb, "export QML2_IMPORT_PATH=\"$dirname/qml\"\n")
 	}
 	fmt.Fprint(bb, "$dirname/$appname \"$@\"\n")
 
@@ -75,11 +74,12 @@ func android_config(target, path, depPath string) string {
 		AndroidExtraLibs              string `json:"android-extra-libs"`
 		AndroidPackageSourceDirectory string `json:"android-package-source-directory"`
 		Qmlrootpath                   string `json:"qml-root-path"`
+		StdcppPath                    string `json:"stdcpp-path"`
 		Applicationbinary             string `json:"application-binary"`
 	}{
-		Qt:  filepath.Join(utils.QT_DIR(), utils.QT_VERSION_MAJOR(), "android_armv7"),
-		Sdk: utils.ANDROID_SDK_DIR(),
-		SdkBuildToolsRevision: "28.0.2",
+		Qt:                            utils.QT_INSTALL_PREFIX(target),
+		Sdk:                           utils.ANDROID_SDK_DIR(),
+		SdkBuildToolsRevision:         "28.0.3",
 		Ndk:                           utils.ANDROID_NDK_DIR(),
 		Toolchainprefix:               "arm-linux-androideabi",
 		Toolprefix:                    "arm-linux-androideabi",
@@ -89,22 +89,32 @@ func android_config(target, path, depPath string) string {
 		AndroidExtraLibs:              filepath.Join(depPath, "libgo_base.so"),
 		AndroidPackageSourceDirectory: filepath.Join(path, target),
 		Qmlrootpath:                   path,
+		StdcppPath:                    filepath.Join(utils.ANDROID_NDK_DIR(), "sources", "cxx-stl", "llvm-libc++", "libs", "armeabi-v7a", "libc++_shared.so"),
 		Applicationbinary:             filepath.Join(depPath, "libgo.so"),
 	}
 
+	if target == "android" && utils.GOARCH() == "arm64" {
+		jsonStruct.Toolchainprefix = "aarch64-linux-android"
+		jsonStruct.Toolprefix = "aarch64-linux-android"
+		jsonStruct.Targetarchitecture = "arm64-v8a"
+		jsonStruct.StdcppPath = filepath.Join(utils.ANDROID_NDK_DIR(), "sources", "cxx-stl", "llvm-libc++", "libs", jsonStruct.Targetarchitecture, "libc++_shared.so")
+	}
+
 	if target == "android-emulator" {
-		jsonStruct.Qt = filepath.Join(utils.QT_DIR(), utils.QT_VERSION_MAJOR(), "android_x86")
 		jsonStruct.Toolchainprefix = "x86"
 		jsonStruct.Toolprefix = "i686-linux-android"
 		jsonStruct.Targetarchitecture = "x86"
+		jsonStruct.StdcppPath = filepath.Join(utils.ANDROID_NDK_DIR(), "sources", "cxx-stl", "llvm-libc++", "libs", jsonStruct.Targetarchitecture, "libc++_shared.so")
 	}
 
 	if utils.QT_DOCKER() {
 		switch target {
 		case "android":
-			jsonStruct.AndroidExtraLibs += "," + filepath.Join(os.Getenv("HOME"), "openssl-1.0.2o-arm", "libcrypto.so") + "," + filepath.Join(os.Getenv("HOME"), "openssl-1.0.2o-arm", "libssl.so")
+			if utils.GOARCH() != "arm64" {
+				jsonStruct.AndroidExtraLibs += "," + filepath.Join(os.Getenv("HOME"), "openssl-1.1.1a-arm", "libcrypto.so") + "," + filepath.Join(os.Getenv("HOME"), "openssl-1.1.1a-arm", "libssl.so")
+			}
 		case "android-emulator":
-			jsonStruct.AndroidExtraLibs += "," + filepath.Join(os.Getenv("HOME"), "openssl-1.0.2o-x86", "libcrypto.so") + "," + filepath.Join(os.Getenv("HOME"), "openssl-1.0.2o-x86", "libssl.so")
+			jsonStruct.AndroidExtraLibs += "," + filepath.Join(os.Getenv("HOME"), "openssl-1.1.1a-x86", "libcrypto.so") + "," + filepath.Join(os.Getenv("HOME"), "openssl-1.1.1a-x86", "libssl.so")
 		}
 	}
 
@@ -144,6 +154,8 @@ func darwin_plist(name string) string {
 	<string>This file was generated by Qt/QMake.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 </dict>
@@ -155,19 +167,37 @@ func darwin_pkginfo() string {
 	return "APPL????\n"
 }
 
+func darwin_nix_script(name string) string {
+	return fmt.Sprintf(`#!/bin/bash
+export PATH=$HOME/.nix-profile/bin:$PATH
+cd "${0%%/*}"
+./%v_bin
+`, name)
+}
+
 //ios
 
 func ios_c_main_wrapper() string {
 	bb := new(bytes.Buffer)
 	bb.WriteString("#include \"libgo.h\"\n")
 	for _, n := range rcc.ResourceNames {
-		fmt.Fprintf(bb, "extern int qInitResources_%v();\n", n)
+		if n == "" {
+			continue
+		}
+		for _, n = range strings.Split(n, "|") {
+			fmt.Fprintf(bb, "extern int qInitResources_%v();\n", n)
+		}
 	}
 	bb.WriteString("int main(int argc, char *argv[]) {\n")
 	for _, n := range rcc.ResourceNames {
-		fmt.Fprintf(bb, "qInitResources_%v();\n", n)
+		if n == "" {
+			continue
+		}
+		for _, n = range strings.Split(n, "|") {
+			fmt.Fprintf(bb, "qInitResources_%v();\n", n)
+		}
 	}
-	bb.WriteString("go_main_wrapper();\n}")
+	bb.WriteString("go_main_wrapper(argc, argv);\n}")
 	return bb.String()
 }
 
@@ -183,7 +213,7 @@ func ios_plist(name string) string {
 	<key>CFBundleGetInfoString</key>
 	<string>Created by Qt/QMake</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.yourcompany.%[1]v</string>
+	<string>%[2]v</string>
 	<key>CFBundleName</key>
 	<string>%[1]v</string>
 	<key>CFBundlePackageType</key>
@@ -213,7 +243,7 @@ func ios_plist(name string) string {
 	<true/>
 </dict>
 </plist>
-`, name)
+`, name, strings.Replace(name, "_", "", -1))
 }
 
 func ios_launchscreen(name string) string {
@@ -324,7 +354,7 @@ func ios_appicon() string {
 `
 }
 
-func ios_xcodeproject(depPath string) string {
+func ios_xcodeproject() string {
 	return `// !$*UTF8*$!
 {
 	archiveVersion = 1;
@@ -509,6 +539,20 @@ func ios_xcodeproject(depPath string) string {
 `
 }
 
+func ios_xcsettings() string {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BuildSystemType</key>
+	<string>Original</string>
+	<key>IDEWorkspaceSharedSettings_AutocreateContextsIfNeeded</key>
+	<false/>
+</dict>
+</plist>
+`
+}
+
 //sailfish
 
 func sailfish_spec(name string) string {
@@ -588,38 +632,6 @@ Icon=harbour-%[1]v
 Exec=harbour-%[1]v`, name)
 }
 
-func sailfish_ssh(port, login string, cmd ...string) error {
-
-	typ := "SailfishOS_Emulator"
-	if port == "2222" {
-		typ = "engine"
-	}
-
-	signer, err := ssh.ParsePrivateKey([]byte(utils.Load(filepath.Join(utils.SAILFISH_DIR(), "vmshare", "ssh", "private_keys", typ, login))))
-	if err != nil {
-		return err
-	}
-
-	client, err := ssh.Dial("tcp", "localhost:"+port, &ssh.ClientConfig{User: login, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: ssh.InsecureIgnoreHostKey()})
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
-	sess, err := client.NewSession()
-	if err != nil {
-		return err
-	}
-
-	output, err := sess.CombinedOutput(strings.Join(cmd, " "))
-	if err != nil {
-		utils.Log.WithField("cmd", strings.Join(cmd, " ")).Debugf("failed to run ssh cmd for %v on %v", typ, runtime.GOOS)
-		return errors.New(string(output))
-	}
-
-	return nil
-}
-
 func ubports_desktop(name string) string {
 	return fmt.Sprintf(`[Desktop Entry]
 Name=%[1]v
@@ -677,7 +689,7 @@ export CXX=%v
 
 go tool link -f -o $PWD/relinked -importcfg $PWD/b001/importcfg.link -buildmode=%v -w -extld=%v $PWD/b001/_pkg_.a`,
 
-		runtime.Version(),
+		utils.GOVERSION(),
 		runtime.GOOS,
 		runtime.GOARCH,
 		utils.QT_VERSION(),
@@ -715,22 +727,68 @@ go tool link -f -o $PWD/relinked -importcfg $PWD/b001/importcfg.link -buildmode=
 		}())
 }
 
-//js
+//js/wasm
 
-func js_c_main_wrapper() string {
+func js_c_main_wrapper(target string) string {
 	bb := new(bytes.Buffer)
-	bb.WriteString("#include <emscripten/val.h>\n")
+	bb.WriteString("#include <emscripten.h>\n")
 	for _, n := range rcc.ResourceNames {
-		fmt.Fprintf(bb, "extern int qInitResources_%v();\n", n)
+		if n == "" {
+			continue
+		}
+		for _, n = range strings.Split(n, "|") {
+			fmt.Fprintf(bb, "extern int qInitResources_%v();\n", n)
+		}
 	}
 	bb.WriteString("int main(int argc, char *argv[]) {\n")
 	for _, n := range rcc.ResourceNames {
-		fmt.Fprintf(bb, "qInitResources_%v();\n", n)
+		if n == "" {
+			continue
+		}
+		for _, n = range strings.Split(n, "|") {
+			fmt.Fprintf(bb, "qInitResources_%v();\n", n)
+		}
 	}
-	bb.WriteString("emscripten::val document = emscripten::val::global(\"document\");\n")
-	bb.WriteString("emscripten::val script = document.call<emscripten::val>(\"createElement\", emscripten::val(\"script\"));\n")
-	bb.WriteString("script.set(\"src\", emscripten::val(\"go.js\"));\n")
-	bb.WriteString("document[\"body\"].call<void>(\"appendChild\", script);\n")
+
+	//TODO: use emscripten_sync_run_in_main_runtime_thread once thread support is there ?
+	bb.WriteString("emscripten_run_script(\"Module._goMain()\");\n")
+
+	bb.WriteString("return 0;\n")
 	bb.WriteString("}")
 	return bb.String()
+}
+
+func wasm_js() string {
+	return `
+
+	if (!WebAssembly.instantiateStreaming) { // polyfill 
+		WebAssembly.instantiateStreaming = async (resp, importObject) => { 
+			const source = await (await resp).arrayBuffer(); 
+			return await WebAssembly.instantiate(source, importObject); 
+		};
+	} 
+
+	let go = new Go(); 
+	let instance;
+
+	let fetchPromise = fetch("go.wasm");
+	WebAssembly.instantiateStreaming(fetchPromise, go.importObject).then((result) => { 
+		instance = result.instance;
+	}).catch((err) => { 
+		//console.log(err); 
+
+		//fallback for wrong MIME type
+		fetchPromise.then((response) =>
+			response.arrayBuffer()
+		).then((bytes) =>
+			WebAssembly.instantiate(bytes, go.importObject)
+		).then((result) =>
+			instance = result.instance
+		);
+	});
+
+	Module._goMain = function() {
+		go.run(instance);
+	};
+})();`
 }

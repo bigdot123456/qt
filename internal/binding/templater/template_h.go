@@ -24,14 +24,18 @@ func HTemplate(m string, mode int, tags string) []byte {
 
 	fmt.Fprint(bb, "#pragma once\n\n")
 
-	fmt.Fprintf(bb, "#ifndef GO_%v_H\n", strings.ToUpper(m))
-	fmt.Fprintf(bb, "#define GO_%v_H\n\n", strings.ToUpper(m))
+	var hash string
+	if m == parser.MOC {
+		hash = "_" + parser.SortedClassesForModule(m, true)[0].Hash() //TODO:
+	}
+	fmt.Fprintf(bb, "#ifndef GO_%v%v_H\n", strings.ToUpper(m), hash)
+	fmt.Fprintf(bb, "#define GO_%v%v_H\n\n", strings.ToUpper(m), hash)
 
 	fmt.Fprint(bb, "#include <stdint.h>\n\n")
 
 	fmt.Fprint(bb, "#ifdef __cplusplus\n")
 	for _, c := range parser.SortedClassNamesForModule(m, true) {
-		if parser.State.ClassMap[c].IsSubClassOfQObject() {
+		if parser.State.ClassMap[c].IsSubClassOfQObject() && parser.State.ClassMap[c].IsSupported() {
 			if m == parser.MOC {
 				fmt.Fprintf(bb, "class %v;\n", c)
 				fmt.Fprintf(bb, "void %[1]v_%[1]v_QRegisterMetaTypes();\n", c)
@@ -60,7 +64,7 @@ func HTemplate(m string, mode int, tags string) []byte {
 	if mode == MOC {
 		pre := bb.String()
 		bb.Reset()
-		libsm := make(map[string]struct{}, 0)
+		libsm := make(map[string]struct{})
 		for _, c := range parser.State.ClassMap {
 			if c.Pkg != "" && c.IsSubClassOfQObject() {
 				libsm[c.Module] = struct{}{}

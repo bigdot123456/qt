@@ -12,7 +12,7 @@ func VIRTUALBOX_DIR() string {
 		return filepath.Clean(dir)
 	}
 	if runtime.GOOS == "windows" {
-		return "C:\\Program Files\\Oracle\\VirtualBox"
+		return windowsSystemDrive() + "\\Program Files\\Oracle\\VirtualBox"
 	}
 	path, err := exec.LookPath("vboxmanage")
 	if err != nil {
@@ -33,7 +33,7 @@ func SAILFISH_DIR() string {
 		return filepath.Clean(dir)
 	}
 	if runtime.GOOS == "windows" {
-		return "C:\\SailfishOS"
+		return windowsSystemDrive() + "\\SailfishOS"
 	}
 	return filepath.Join(os.Getenv("HOME"), "SailfishOS")
 }
@@ -46,5 +46,5 @@ func QT_SAILFISH_VERSION() string {
 	if ver, ok := os.LookupEnv("QT_SAILFISH_VERSION"); ok {
 		return ver
 	}
-	return "2.2.0.29"
+	return "3.0.3.9"
 }

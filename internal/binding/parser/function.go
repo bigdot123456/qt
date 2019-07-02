@@ -25,6 +25,7 @@ type Function struct {
 	Parameters        []*Parameter `xml:"parameter"`
 	Brief             string       `xml:"brief,attr"`
 	Since             string       `xml:"since,attr"`
+	Related           string       `xml:"related,attr"`
 	SignalMode        string
 	TemplateModeJNI   string
 	Default           bool
@@ -47,6 +48,7 @@ type Function struct {
 	Target            string
 	Inbound           bool
 	BoundByEmscripten bool //TODO: needed at all ?
+	FakeForJSCallback bool
 }
 
 type Parameter struct {
@@ -89,6 +91,8 @@ func (f *Function) register(m string) {
 //TODO: multipoly [][]string
 //TODO: connect/disconnect slot functions + add necessary SIGNAL_* functions (check first if really needed)
 func (f *Function) PossiblePolymorphicDerivations(self bool) ([]string, string) {
+	fc, _ := f.Class()
+
 	var out = make([]string, 0)
 
 	var params = func() []*Parameter {
@@ -107,7 +111,7 @@ func (f *Function) PossiblePolymorphicDerivations(self bool) ([]string, string) 
 		if f.Meta == CONSTRUCTOR {
 			for _, class := range State.ClassMap {
 				//TODO: use target to block certain classes
-				if ShouldBuildForTarget(strings.TrimPrefix(class.Module, "Qt"), State.Target) &&
+				if shouldBuildForTarget(strings.TrimPrefix(class.Module, "Qt"), State.Target, fc.Module == MOC) &&
 					!(class.Name == "QCameraViewfinder" || class.Name == "QGraphicsVideoItem" ||
 						class.Name == "QVideoWidget" || class.Name == "QVideoWidgetControl") {
 					if class.IsPolymorphic() && class.IsSubClassOf(c.Name) && class.IsSupported() {
@@ -262,6 +266,19 @@ func (f *Function) IsJNIGeneric() bool {
 //TODO:
 func (f *Function) IsSupported() bool {
 
+	if utils.QT_MACPORTS() {
+		if f.Fullname == "QWebFrame::ownerElement" || f.Fullname == "QWebHistory::toMap" ||
+			f.Fullname == "QWebHistoryItem::toMap" || f.Fullname == "QWebPage::consoleMessageReceived" ||
+			f.Fullname == "QWebPage::focusedElementChanged" || f.Fullname == "QWebPage::recentlyAudibleChanged" ||
+			f.Fullname == "QWebPage::recentlyAudible" || f.Fullname == "QWebSettings::pluginSearchPaths" ||
+			f.Fullname == "QWebSettings::setPluginSearchPaths" {
+			if !strings.Contains(f.Access, "unsupported") {
+				f.Access = "unsupported_isBlockedFunction"
+			}
+			return false
+		}
+	}
+
 	if utils.QT_VERSION_NUM() >= 5080 {
 		if f.Fullname == "QJSEngine::newQMetaObject" && f.OverloadNumber == "2" ||
 			f.Fullname == "QScxmlTableData::instructions" || f.Fullname == "QScxmlTableData::dataNames" ||
@@ -274,8 +291,17 @@ func (f *Function) IsSupported() bool {
 		}
 	}
 
+	if f.Related == "true" {
+		f.Access = "unsupported_isBlockedFunction"
+		return false
+	}
+
 	switch {
 	case
+		f.Fullname == "QOcspResponse::certificateStatus", f.Fullname == "QOcspResponse::revocationReason",
+
+		f.ClassName() == "operator QCborError",
+
 		(f.ClassName() == "QAccessibleObject" || f.ClassName() == "QAccessibleInterface" || f.ClassName() == "QAccessibleWidget" || //QAccessible::State -> quint64
 			f.ClassName() == "QAccessibleStateChangeEvent") && (f.Name == "state" || f.Name == "changedStates" || f.Name == "m_changedStates" || f.Name == "setM_changedStates" || f.Meta == CONSTRUCTOR),
 
@@ -319,7 +345,7 @@ func (f *Function) IsSupported() bool {
 
 		f.Fullname == "QListView::indexesMoved", f.Fullname == "QAudioInputSelectorControl::availableInputs", f.Fullname == "QScxmlStateMachine::initialValuesChanged",
 		f.Fullname == "QAudioOutputSelectorControl::availableOutputs", f.Fullname == "QQuickWebEngineProfile::downloadFinished",
-		f.Fullname == "QQuickWindow::closing", f.Fullname == "QQuickWebEngineProfile::downloadRequested", f.Fullname == "QWebEnginePage::fullScreenRequested",
+		f.Fullname == "QQuickWindow::closing", f.Fullname == "QQuickWebEngineProfile::downloadRequested",
 
 		f.Fullname == "QApplication::autoMaximizeThreshold", f.Fullname == "QApplication::setAutoMaximizeThreshold",
 
@@ -343,13 +369,14 @@ func (f *Function) IsSupported() bool {
 		f.Fullname == "QAndroidBinder::onTransact", f.Fullname == "QtAndroid::checkPermission",
 
 		UseJs() &&
-			(strings.Contains(f.Name, "ibraryPath") || f.Fullname == "QLockFile::getLockInfo" || f.Name == "metric" || f.Name == "moveCursor" ||
+			(strings.Contains(f.Name, "ibraryPath") || f.Fullname == "QLockFile::getLockInfo" ||
 				f.Name == "inputMethodEvent" || f.Name == "updateInputMethod" || f.Name == "inputMethodQuery" ||
 				f.Fullname == "QHeaderView::isFirstSectionMovable" || f.Fullname == "QXmlSimpleReader::property" || f.Fullname == "QXmlReader::property" ||
 				f.Fullname == "QWebSocket::ignoreSslErrors" || f.Fullname == "QWebSocket::preSharedKeyAuthenticationRequired" ||
 				f.Fullname == "QWebSocket::sslConfiguration" || f.Fullname == "QWebSocket::setSslConfiguration" ||
 				f.Fullname == "QWebSocketServer::peerVerifyError" || (strings.HasPrefix(f.ClassName(), "QWeb") && strings.Contains(f.Name, "slErrors")) ||
-				f.Fullname == "QWebSocketServer::preSharedKeyAuthenticationRequired" || f.Fullname == "QWebSocketServer::setSslConfiguration" || f.Fullname == "QWebSocketServer::sslConfiguration"),
+				f.Fullname == "QWebSocketServer::preSharedKeyAuthenticationRequired" || f.Fullname == "QWebSocketServer::setSslConfiguration" || f.Fullname == "QWebSocketServer::sslConfiguration" ||
+				(f.Name == "readData" && len(f.Parameters) == 2)),
 
 		f.Name == "qt_metacast", f.Fullname == "QVariant::fromStdVariant",
 		f.Name == "qt_check_for_QGADGET_macro",
@@ -366,20 +393,35 @@ func (f *Function) IsSupported() bool {
 
 		f.Fullname == "QtRemoteObjects::qt_getEnumMetaObject",
 
-		f.ClassName() == "QWebEnginePage" && (f.Name == "certificateError" ||
-			f.Name == "quotaRequested" || f.Name == "registerProtocolHandlerRequested"),
+		//WebEngine
+		f.Fullname == "QWebEnginePage::quotaRequested",
+		f.Fullname == "QWebEnginePage::registerProtocolHandlerRequested",
+		f.Fullname == "QWebEnginePage::save",
+		f.Fullname == "QWebEnginePage::fullScreenRequested",
 
 		f.Fullname == "QWebEngineScriptCollection::insert",
 		f.Fullname == "QWebEngineScriptCollection::findScript",
-		f.Fullname == "QWebEngineView::pageAction",
-		f.Fullname == "QWebEnginePage::save",
 		f.Fullname == "QWebEngineScriptCollection::remove",
 		f.Fullname == "QWebEngineScriptCollection::contains",
 		f.Fullname == "QWebEngineScriptCollection::findScripts",
 		f.Fullname == "QWebEngineScriptCollection::toList",
+
+		f.Fullname == "QWebEngineView::pageAction",
 		f.Fullname == "QWebEngineView::createWindow",
 		f.Fullname == "QWebEngineView::renderProcessTerminated",
 		f.Fullname == "QWebEngineView::triggerPageAction",
+		//
+
+		f.Fullname == "QCustom3DVolume::QCustom3DVolume" && f.OverloadNumber == "2",
+
+		f.Name == "defaultDtlsConfiguration", f.Name == "setDefaultDtlsConfiguration",
+		f.Name == "setDtlsCookieVerificationEnabled", f.Name == "dtlsCookieVerificationEnabled",
+		f.Fullname == "QNearFieldManager::adapterStateChanged", f.Name == "singletonInstance",
+		f.Fullname == "QWebEngineUrlScheme::syntax",
+
+		f.Fullname == "QVirtualKeyboardSelectionListModel::setCount",
+		f.Fullname == "QtVirtualKeyboard::qlcVirtualKeyboard",
+		f.Name == "trUtf8",
 
 		strings.Contains(f.Access, "unsupported"):
 		{
@@ -402,7 +444,7 @@ func (f *Function) IsSupported() bool {
 		strings.HasPrefix(genName, "attributes") || strings.HasPrefix(genName, "additionalFormats") ||
 		strings.HasPrefix(genName, "rawHeaderPairs") || strings.HasPrefix(genName, "tabs") ||
 		strings.HasPrefix(genName, "QInputMethodEvent_attributes") || strings.HasPrefix(genName, "selections") || strings.HasPrefix(genName, "setSelections") ||
-		strings.HasPrefix(genName, "formats") || strings.HasPrefix(genName, "setAdditionalFormats") || strings.HasPrefix(genName, "setFormats") ||
+		strings.HasPrefix(genName, "setAdditionalFormats") || strings.HasPrefix(genName, "setFormats") ||
 		strings.HasPrefix(genName, "setTabs") || strings.HasPrefix(genName, "extraSelections") ||
 		strings.HasPrefix(genName, "setExtraSelections") || strings.HasPrefix(genName, "setButtonLayout") ||
 		strings.HasPrefix(genName, "setWhiteList") || strings.HasPrefix(genName, "whiteList") ||
@@ -411,7 +453,8 @@ func (f *Function) IsSupported() bool {
 		strings.HasPrefix(genName, "setTextureData") || strings.HasPrefix(genName, "textureData") ||
 		strings.HasPrefix(genName, "QCustom3DVolume_textureData") || strings.HasPrefix(genName, "createTextureData") ||
 		strings.Contains(genName, "alternateSubjectNames") || strings.HasPrefix(genName, "fromVariantMap") ||
-		strings.HasPrefix(genName, "QScxmlDataModel") {
+		strings.HasPrefix(genName, "QScxmlDataModel") || strings.HasPrefix(genName, "readAllFrames") ||
+		strings.HasPrefix(genName, "manufacturerData") {
 
 		if strings.HasPrefix(genName, "setTabs") || strings.HasPrefix(genName, "tabs") {
 			return !strings.HasPrefix(f.Name, "__")
@@ -420,18 +463,11 @@ func (f *Function) IsSupported() bool {
 		return false
 	}
 
-	//TODO:
-	if f.Name == "nativeEvent" {
-		f.Access = "unsupported_isBlockedFunction"
-		return false
-	}
-
 	//TODO: blocked for small
 	if f.Fullname == "QTemporaryFile::open" && f.OverloadNumber == "2" ||
 		f.Fullname == "QXmlEntityResolver::resolveEntity" ||
 		f.Fullname == "QXmlReader::parse" && f.OverloadNumber == "2" ||
 		f.Fullname == "QGraphicsItem::updateMicroFocus" ||
-		f.Fullname == "QGridLayout::addItem" && f.OverloadNumber == "2" ||
 		f.Fullname == "QSvgGenerator::metric" ||
 		f.Fullname == "QScxmlDataModel::setScxmlEvent" ||
 		f.Fullname == "QPageSetupDialog::open" ||
@@ -442,7 +478,6 @@ func (f *Function) IsSupported() bool {
 		f.Fullname == "QSqlTableModel::submit" ||
 		f.Fullname == "QFormLayout::itemAt" ||
 		f.Fullname == "QGraphicsGridLayout::itemAt" ||
-		f.Fullname == "QGridLayout::addItem" ||
 
 		((f.ClassName() == "QGraphicsGridLayout" || f.ClassName() == "QFormLayout") && f.Name == "itemAt" && f.OverloadNumber == "2") {
 		return false
@@ -528,10 +563,7 @@ func (f *Function) IsDerivedFromVirtual() bool {
 		return true
 	}
 
-	var class, ok = f.Class()
-	if !ok {
-		//return false
-	}
+	var class, _ = f.Class()
 
 	for _, bc := range class.GetAllBases() {
 		if bclass, ok := State.ClassMap[bc]; ok {
@@ -566,10 +598,7 @@ func (f *Function) IsDerivedFromImpure() bool {
 		return false
 	}
 
-	var class, ok = f.Class()
-	if !ok {
-		//return false
-	}
+	var class, _ = f.Class()
 
 	if f.Virtual == IMPURE {
 		return true
@@ -603,10 +632,7 @@ func (f *Function) IsDerivedFromImpure() bool {
 }
 
 func (f *Function) IsDerivedFromPure() bool {
-	var class, ok = f.Class()
-	if !ok {
-		//return false
-	}
+	var class, _ = f.Class()
 
 	if f.Virtual == PURE {
 		return true

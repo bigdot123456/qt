@@ -6,17 +6,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
 func ExistsFile(name string) bool {
-	_, err := ioutil.ReadFile(name)
+	_, err := os.Stat(name)
 	return err == nil
 }
 
 func ExistsDir(name string) bool {
-	_, err := ioutil.ReadDir(name)
+	_, err := os.Stat(name)
 	return err == nil
 }
 
@@ -82,15 +84,26 @@ func LoadOptional(name string) string {
 	return string(out)
 }
 
-func GoQtPkgPath(s ...string) string {
-	return filepath.Join(MustGoPath(), "src", "github.com", "therecipe", "qt", filepath.Join(s...))
+var (
+	goQtPkgPath      string
+	goQtPkgPathMutex = new(sync.Mutex)
+)
+
+func GoQtPkgPath(s ...string) (r string) {
+	goQtPkgPathMutex.Lock()
+	if len(goQtPkgPath) == 0 {
+		goQtPkgPath = strings.TrimSpace(RunCmd(GoList("{{.Dir}}", PackageName, "-find"), "utils.GoQtPkgPath"))
+	}
+	r = goQtPkgPath
+	goQtPkgPathMutex.Unlock()
+	return filepath.Join(r, filepath.Join(s...))
 }
 
 //TODO: export error
 func RunCmd(cmd *exec.Cmd, name string) string {
-	fields := logrus.Fields{"func": "RunCmd", "name": name, "cmd": strings.Join(cmd.Args, " "), "env": strings.Join(cmd.Env, " "), "dir": cmd.Dir}
+	fields := logrus.Fields{"_func": "RunCmd", "name": name, "cmd": strings.Join(cmd.Args, " "), "env": strings.Join(cmd.Env, " "), "dir": cmd.Dir}
 	Log.WithFields(fields).Debug("Execute")
-	out, err := cmd.CombinedOutput()
+	out, err := runCmdHelper(cmd)
 	if err != nil {
 		Log.WithError(err).WithFields(fields).Error("failed to run command")
 		println(string(out))
@@ -101,23 +114,40 @@ func RunCmd(cmd *exec.Cmd, name string) string {
 
 //TODO: export error
 func RunCmdOptional(cmd *exec.Cmd, name string) string {
-	fields := logrus.Fields{"func": "RunCmdOptional", "name": name, "cmd": strings.Join(cmd.Args, " "), "env": strings.Join(cmd.Env, " "), "dir": cmd.Dir}
+	fields := logrus.Fields{"_func": "RunCmdOptional", "name": name, "cmd": strings.Join(cmd.Args, " "), "env": strings.Join(cmd.Env, " "), "dir": cmd.Dir}
 	Log.WithFields(fields).Debug("Execute")
-	out, err := cmd.CombinedOutput()
+	out, err := runCmdHelper(cmd)
 	if err != nil && !strings.Contains(string(out), "No template (-t) specified") {
-		Log.WithError(err).WithFields(fields).Error("failed to run command")
-		println(string(out))
+		Log.WithError(err).WithFields(fields).Debug("failed to run command")
+		if Log.Level == logrus.DebugLevel {
+			println(string(out))
+		}
 	}
 	return string(out)
 }
 
 func RunCmdOptionalError(cmd *exec.Cmd, name string) (string, error) {
-	fields := logrus.Fields{"func": "RunCmdOptionalError", "name": name, "cmd": strings.Join(cmd.Args, " "), "env": strings.Join(cmd.Env, " ")}
+	fields := logrus.Fields{"_func": "RunCmdOptionalError", "name": name, "cmd": strings.Join(cmd.Args, " "), "env": strings.Join(cmd.Env, " "), "dir": cmd.Dir}
 	Log.WithFields(fields).Debug("Execute")
-	out, err := cmd.CombinedOutput()
+	out, err := runCmdHelper(cmd)
 	if err != nil {
-		Log.WithError(err).WithFields(fields).Error("failed to run command")
-		println(string(out))
+		Log.WithError(err).WithFields(fields).Debug("failed to run command")
+		if Log.Level == logrus.DebugLevel {
+			println(string(out))
+		}
 	}
 	return string(out), err
+}
+
+func runCmdHelper(cmd *exec.Cmd) (out []byte, err error) {
+	if _, ok := os.LookupEnv("WINEDEBUG"); ok {
+		go func() { out, err = cmd.CombinedOutput() }()
+		for range time.NewTicker(250 * time.Millisecond).C {
+			if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+				break
+			}
+		}
+		return
+	}
+	return cmd.CombinedOutput()
 }

@@ -69,6 +69,9 @@ func GoHeaderName(f *parser.Function) string {
 	}
 
 	if f.Default {
+		if bytes.HasSuffix(bb.Bytes(), []byte("z__")) {
+			bb.Truncate(len(bb.Bytes()) - 3)
+		}
 		fmt.Fprint(bb, "Default")
 	}
 
@@ -81,7 +84,7 @@ func GoHeaderName(f *parser.Function) string {
 		return f.Access
 	}
 
-	return strings.Replace(bb.String(), parser.TILDE, "", -1)
+	return strings.Replace(strings.TrimSuffix(strings.Replace(bb.String(), parser.TILDE, "", -1), "z__"), "z__Changed", "Changed", -1)
 }
 
 func CppHeaderName(f *parser.Function) string {
@@ -94,12 +97,15 @@ func GoHeaderOutput(f *parser.Function) string {
 	case parser.CALLBACK:
 		{
 			if parser.UseJs() {
+				if parser.UseWasm() {
+					return "interface{}"
+				}
 				cv := parser.CleanValue(f.Output)
 				switch cv {
 				case "char", "qint8", "uchar", "quint8", "GLubyte", "QString", "QStringList":
 					return "*js.Object"
 				}
-				if isClass(cv) || parser.IsPackedList(cv) || parser.IsPackedMap(cv) {
+				if isClass(cv) || parser.IsPackedList(cv) || parser.IsPackedMap(cv) || goType(f, f.Output, f.PureGoOutput) == "unsafe.Pointer" {
 					return "uintptr"
 				}
 				return goType(f, f.Output, f.PureGoOutput)
@@ -161,27 +167,54 @@ func GoHeaderInput(f *parser.Function) string {
 
 	if f.SignalMode == parser.CALLBACK {
 		if parser.UseJs() {
+			if parser.UseWasm() {
+				return "_ js.Value, args []js.Value"
+			}
 			fmt.Fprint(bb, "ptr uintptr")
 		} else {
 			fmt.Fprint(bb, "ptr unsafe.Pointer")
 		}
 		for _, p := range f.Parameters {
-			if parser.UseJs() {
+			if parser.UseJs() { //TODO: move into goType ?
 				if v := goType(f, p.Value, p.PureGoType); v != "" {
 					cv := parser.CleanValue(p.Value)
 					if isEnum(f.ClassName(), cv) {
 						fmt.Fprintf(bb, ", %v int64", parser.CleanName(p.Name, p.Value))
 					} else if isClass(cv) {
 						if cv == "QString" || cv == "QStringList" {
-							fmt.Fprintf(bb, ", %v string", parser.CleanName(p.Name, p.Value))
+							if f.FakeForJSCallback {
+								fmt.Fprintf(bb, ", %v string", parser.CleanName(p.Name, p.Value))
+							} else {
+								fmt.Fprintf(bb, ", %vP *js.Object", parser.CleanName(p.Name, p.Value))
+							}
 						} else {
-							fmt.Fprintf(bb, ", %v uintptr", parser.CleanName(p.Name, p.Value))
+							if f.FakeForJSCallback {
+								fmt.Fprintf(bb, ", %v *js.Object", parser.CleanName(p.Name, p.Value))
+							} else {
+								fmt.Fprintf(bb, ", %v uintptr", parser.CleanName(p.Name, p.Value))
+							}
 						}
 					} else {
 						if parser.IsPackedList(cv) || parser.IsPackedMap(cv) {
-							fmt.Fprintf(bb, ", %v *js.Object", parser.CleanName(p.Name, p.Value))
+							if parser.UseWasm() {
+								fmt.Fprintf(bb, ", %v js.Value", parser.CleanName(p.Name, p.Value))
+							} else {
+								fmt.Fprintf(bb, ", %v *js.Object", parser.CleanName(p.Name, p.Value))
+							}
 						} else {
-							fmt.Fprintf(bb, ", %v %v", parser.CleanName(p.Name, p.Value), v)
+							if v == "string" {
+								if f.FakeForJSCallback {
+									fmt.Fprintf(bb, ", %v string", parser.CleanName(p.Name, p.Value))
+								} else {
+									fmt.Fprintf(bb, ", %vP *js.Object", parser.CleanName(p.Name, p.Value))
+								}
+							} else {
+								if v == "*bool" || v == "*int" || v == "unsafe.Pointer" {
+									fmt.Fprintf(bb, ", %v uintptr", parser.CleanName(p.Name, p.Value))
+								} else {
+									fmt.Fprintf(bb, ", %v %v", parser.CleanName(p.Name, p.Value), v)
+								}
+							}
 						}
 					}
 				}

@@ -51,9 +51,15 @@ func main() {
 	flag.BoolVar(&vagrant, "vagrant", false, "run command inside vagrant vm")
 
 	var dynamic bool
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS != "windows" {
 		flag.BoolVar(&dynamic, "dynamic", false, "create and use semi-dynamic libraries during the generation and installation process (experimental; no real replacement for dynamic linking)")
 	}
+
+	var failfast bool
+	flag.BoolVar(&failfast, "failfast", false, "exit the setup upon the first error encountered during the installation step")
+
+	var test bool
+	flag.BoolVar(&test, "test", true, "build and run example applications on the end of the setup")
 
 	if cmd.ParseFlags() {
 		flag.Usage()
@@ -82,28 +88,35 @@ func main() {
 	if target == "desktop" {
 		target = runtime.GOOS
 	}
+	utils.CheckBuildTarget(target, docker)
+	cmd.InitEnv(target)
 
-	if dynamic && (target == runtime.GOOS || target == "js") {
+	if dynamic && (target == runtime.GOOS || target == "js" || target == "wasm") {
 		os.Setenv("QT_DYNAMIC_SETUP", "true")
 	}
 
-	utils.CheckBuildTarget(target)
 	switch mode {
 	case "prep":
-		setup.Prep()
+		setup.Prep(target)
 	case "check":
 		setup.Check(target, docker, vagrant)
 	case "generate":
 		setup.Generate(target, docker, vagrant)
 	case "install":
-		setup.Install(target, docker, vagrant)
+		setup.Install(target, docker, vagrant, failfast)
 	case "test":
+		if !test {
+			return
+		}
 		setup.Test(target, docker, vagrant, vagrant_system)
 	case "full":
-		setup.Prep()
+		setup.Prep(target)
 		setup.Check(target, docker, vagrant)
 		setup.Generate(target, docker, vagrant)
-		setup.Install(target, docker, vagrant)
+		setup.Install(target, docker, vagrant, failfast)
+		if !test {
+			return
+		}
 		setup.Test(target, docker, vagrant, vagrant_system)
 	case "update":
 		setup.Update()

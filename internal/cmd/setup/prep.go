@@ -3,28 +3,27 @@ package setup
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 
 	"github.com/therecipe/qt/internal/utils"
 )
 
-func Prep() {
+func Prep(target string) {
 	utils.Log.Info("running: 'qtsetup prep'")
 
 	errString := "failed to create %v symlink in your PATH (%v); please use %v instead"
 	sucString := "successfully created %v symlink in your PATH (%v)"
 
 	for _, app := range []string{"qtrcc", "qtmoc", "qtminimal", "qtdeploy", "go"} {
-		if app == "go" && !utils.QT_MSYS2() {
+		if app == "go" && !(utils.QT_MSYS2() && !utils.QT_DOCKER()) {
 			continue
 		}
 
 		if runtime.GOOS == "windows" {
 			sPath := filepath.Join(utils.GOBIN(), fmt.Sprintf("%v.exe", app))
 			dPath := filepath.Join(runtime.GOROOT(), "bin", fmt.Sprintf("%v.exe", app))
-			if utils.QT_MSYS2() {
+			if utils.QT_MSYS2() && !utils.QT_DOCKER() {
 				if app == "go" {
 					sPath = dPath
 				}
@@ -34,14 +33,17 @@ func Prep() {
 				continue
 			}
 			utils.RemoveAll(dPath)
-			//TODO: use os.Link to create a hardlink on windows
-			utils.RunCmdOptional(exec.Command("cmd", "/C", "mklink", "/H", dPath, sPath), fmt.Sprintf(errString, app, dPath, sPath))
+			if err := os.Link(sPath, dPath); err == nil {
+				utils.Log.Infof(sucString, app, dPath)
+			} else {
+				utils.Log.Warnf(errString, app, dPath, sPath)
+			}
 			continue
 		} else {
 			var suc bool
 			sPath := filepath.Join(utils.GOBIN(), app)
 			var dPath string
-			for _, pdPath := range filepath.SplitList("/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:" + filepath.Join(filepath.Join(runtime.GOROOT(), "bin"))) {
+			for _, pdPath := range filepath.SplitList("/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin") {
 				dPath = filepath.Join(pdPath, app)
 				if sPath == dPath {
 					continue
@@ -57,6 +59,14 @@ func Prep() {
 			} else {
 				utils.Log.Warnf(errString, app, dPath, sPath)
 			}
+		}
+	}
+
+	if runtime.GOOS == "linux" && target == runtime.GOOS && !(utils.QT_PKG_CONFIG() || utils.QT_STATIC()) {
+		sysQtDir := "/usr/lib/x86_64-linux-gnu/qt5/"
+		file := "plugins/platforminputcontexts/libfcitxplatforminputcontextplugin.so"
+		if f := filepath.Join(sysQtDir, file); utils.ExistsFile(f) {
+			utils.Save(filepath.Join(utils.QT_INSTALL_PREFIX(target), file), utils.Load(f))
 		}
 	}
 }

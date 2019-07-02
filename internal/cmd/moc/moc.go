@@ -42,14 +42,68 @@ var (
 
 	ResourceNames      = make(map[string]string)
 	ResourceNamesMutex = new(sync.Mutex)
+
+	goNameCache      = make(map[string]string)
+	goNameCacheMutex = new(sync.Mutex)
+
+	goDirCache      = make(map[string]string)
+	goDirCacheMutex = new(sync.Mutex)
 )
 
-func Moc(path, target, tags string, fast, slow bool) {
-	moc(path, target, tags, fast, slow, true, -1)
+func Moc(path, target, tags string, fast, slow, deploying bool) {
+	if utils.UseGOMOD(path) {
+		if !utils.ExistsDir(filepath.Join(filepath.Dir(utils.GOMOD(path)), "vendor")) {
+			cmd := exec.Command("go", "mod", "vendor")
+			cmd.Dir = path
+			utils.RunCmd(cmd, "go mod vendor")
+		}
+	}
+
+	moc(path, target, tags, fast, slow, true, -1, false)
+
+	if !deploying && utils.QT_DOCKER() {
+		if idug, ok := os.LookupEnv("IDUG"); ok {
+			utils.RunCmd(exec.Command("chown", "-R", idug, path), "chown files to user")
+		}
+	}
 }
 
-func moc(path, target, tags string, fast, slow, root bool, l int) {
+func moc(path, target, tags string, fast, slow, root bool, l int, dirty bool) {
 	utils.Log.WithField("path", path).WithField("target", target).Debug("start Moc")
+
+	if target == "js" || target == "wasm" || utils.QT_NOT_CACHED() { //TODO: remove for module support + resolve dependencies
+		dirty = true
+	}
+
+	if !dirty {
+		for _, f := range []bool{false, true} {
+			env, tagsEnv, _, _ := cmd.BuildEnv(target, "", "")
+			scmd := utils.GoList("{{.Stale}}|{{.StaleReason}}")
+			scmd.Dir = path
+
+			if ((!fast && !utils.QT_FAT()) || f) && !((!fast && !utils.QT_FAT()) && f) {
+				tagsEnv = append(tagsEnv, "minimal")
+			}
+			if tags != "" {
+				tagsEnv = append(tagsEnv, strings.Split(tags, " ")...)
+			}
+			scmd.Args = append(scmd.Args, fmt.Sprintf("-tags=\"%v\"", strings.Join(tagsEnv, "\" \"")))
+
+			if target != runtime.GOOS {
+				scmd.Args = append(scmd.Args, []string{"-pkgdir", filepath.Join(utils.MustGoPath(), "pkg", fmt.Sprintf("%v_%v_%v", strings.Replace(target, "-", "_", -1), env["GOOS"], env["GOARCH"]))}...)
+			}
+
+			for key, value := range env {
+				scmd.Env = append(scmd.Env, fmt.Sprintf("%v=%v", key, value))
+			}
+
+			if out := utils.RunCmdOptional(scmd, fmt.Sprintf("go check stale for %v on %v", target, runtime.GOOS)); strings.Contains(out, "but available in build cache") || strings.Contains(out, "false|") {
+				utils.Log.WithField("path", path).Debug("skipping already cached moc")
+				return
+			}
+		}
+		dirty = true
+	}
 
 	l++
 	if l <= gL {
@@ -60,14 +114,14 @@ func moc(path, target, tags string, fast, slow, root bool, l int) {
 	//fmt.Println(l, strings.Repeat(" ", l)+strings.Replace(path, utils.MustGoPath()+"/src/", "", -1))
 
 	if root {
-		ngr := 50
+		ngr := runtime.NumCPU() * 2
 		if slow {
 			ngr = 1
 		}
 		defer rootWg.Wait()
 		wg := new(sync.WaitGroup)
 		wc := make(chan bool, ngr)
-		allImports := append([]string{path}, cmd.GetImports(path, target, tags, 0, false, true)...)
+		allImports := append([]string{path}, cmd.GetImports(path, target, tags, 0, false)...)
 
 		wg.Add(len(allImports) * 2)
 		for _, path := range allImports {
@@ -83,7 +137,7 @@ func moc(path, target, tags string, fast, slow, root bool, l int) {
 
 			wc <- true
 			go func(path string) {
-				imports := cmd.GetImports(path, target, tags, 0, true, true)
+				imports := cmd.GetImports(path, target, tags, 0, true)
 				goImportsCacheMutex.Lock()
 				goImportsCache[path] = imports
 				goImportsCacheMutex.Unlock()
@@ -103,12 +157,12 @@ func moc(path, target, tags string, fast, slow, root bool, l int) {
 	for i, spath := range append([]string{path}, goImportsCache[path]...) {
 		if _, ok := done[spath]; !ok && i > 0 && !fast {
 			done[spath] = i
-			moc(spath, target, tags, false, slow, false, l)
+			moc(spath, target, tags, false, slow, false, l, dirty)
 		}
 
 		for _, fpath := range goFilesCache[spath] {
 			cls, ipkg, err := parse(fpath)
-			if pkg == "" {
+			if pkg == "" || strings.TrimSuffix(pkg, "_test") == ipkg {
 				pkg = ipkg
 			}
 			if err != nil {
@@ -145,7 +199,7 @@ func moc(path, target, tags string, fast, slow, root bool, l int) {
 	}
 
 	if _, ok := parser.State.ClassMap["QObject"]; !ok {
-		parser.LoadModules()
+		parser.LoadModulesM(target)
 	} else {
 		utils.Log.Debug("modules already cached")
 	}
@@ -289,39 +343,79 @@ func moc(path, target, tags string, fast, slow, root bool, l int) {
 	ResourceNames[filepath.Join(path, "moc.cpp")] = ""
 	ResourceNamesMutex.Unlock()
 
-	if err := utils.SaveBytes(filepath.Join(path, "moc.cpp"), templater.CppTemplate(parser.MOC, templater.MOC, target, tags)); err != nil {
-		return
+	var staleCheck string
+	if !(target == "js" || target == "wasm" || utils.QT_NOT_CACHED()) { //TODO: remove for module support + resolve dependencies
+		env, tagsEnv, _, _ := cmd.BuildEnv(target, "", "")
+		scmd := utils.GoList("{{.Stale}}|{{.StaleReason}}")
+		scmd.Dir = path
+
+		if !fast && !utils.QT_FAT() {
+			tagsEnv = append(tagsEnv, "minimal")
+		}
+		if tags != "" {
+			tagsEnv = append(tagsEnv, strings.Split(tags, " ")...)
+		}
+		scmd.Args = append(scmd.Args, fmt.Sprintf("-tags=\"%v\"", strings.Join(tagsEnv, "\" \"")))
+
+		if target != runtime.GOOS {
+			scmd.Args = append(scmd.Args, []string{"-pkgdir", filepath.Join(utils.MustGoPath(), "pkg", fmt.Sprintf("%v_%v_%v", strings.Replace(target, "-", "_", -1), env["GOOS"], env["GOARCH"]))}...)
+		}
+
+		for key, value := range env {
+			scmd.Env = append(scmd.Env, fmt.Sprintf("%v=%v", key, value))
+		}
+		staleCheck = utils.RunCmdOptional(scmd, fmt.Sprintf("go check stale for %v on %v", target, runtime.GOOS)) + "|"
 	}
 
-	if err := utils.SaveBytes(filepath.Join(path, "moc.h"), templater.HTemplate(parser.MOC, templater.MOC, tags)); err != nil {
-		return
-	}
-	fixR := templater.GoTemplate(parser.MOC, false, templater.MOC, pkg, target, tags)
+	if strings.Contains(staleCheck, "but available in build cache") || strings.Contains(staleCheck, "false|") {
+		utils.Log.WithField("path", path).Debug("skipping already cached moc")
+	} else {
+		if err := utils.SaveBytes(filepath.Join(path, "moc.cpp"), templater.CppTemplate(parser.MOC, templater.MOC, target, tags)); err != nil {
+			return
+		}
 
-	rootWg.Add(1)
-	go func() {
-		defer rootWg.Done()
+		if err := utils.SaveBytes(filepath.Join(path, "moc.h"), templater.HTemplate(parser.MOC, templater.MOC, tags)); err != nil {
+			return
+		}
+		fixR := templater.GoTemplate(parser.MOC, false, templater.MOC, pkg, target, tags)
 
-		var fix []byte
-		var err error
-		for i := 0; i < 5; i++ {
-			fix, err = imports.Process("moc.go", fixR, nil)
+		rootWg.Add(1)
+		go func() {
+			defer rootWg.Done()
+			fix, err := imports.Process("moc.go", fixR, nil)
 			if err != nil {
 				utils.Log.WithError(err).Error("failed to fix go imports")
 				fix = fixR
 			}
+			if err := utils.SaveBytes(filepath.Join(path, "moc.go"), fix); err != nil {
+				return
+			}
+		}()
+
+		var libs []string
+		parser.LibDepsMutex.Lock()
+		libs = parser.LibDeps[parser.MOC]
+		parser.LibDepsMutex.Unlock()
+
+		if parser.ShouldBuildForTargetM("Qml", target) {
+			libs = append(libs, "Qml")
 		}
 
-		if err := utils.SaveBytes(filepath.Join(path, "moc.go"), fix); err != nil {
-			return
-		}
-	}()
+		rootWg.Add(1)
+		go func() {
+			templater.CgoTemplateSafe(parser.MOC, path, target, templater.MOC, pkg, tags, libs)
+			rootWg.Done()
+		}()
 
-	rootWg.Add(1)
-	go func(libs []string) {
-		templater.CgoTemplateSafe(parser.MOC, path, target, templater.MOC, pkg, tags, libs)
-		rootWg.Done()
-	}(parser.LibDeps[parser.MOC])
+		rootWg.Add(1)
+		go func() {
+			utils.RunCmd(exec.Command(utils.ToolPath("moc", target), filepath.Join(path, "moc.cpp"), "-o", filepath.Join(path, "moc_moc.h")), "run moc")
+			if tags != "" {
+				utils.Save(filepath.Join(path, "moc_moc.h"), "// +build "+tags+"\n\n"+utils.Load(filepath.Join(path, "moc_moc.h")))
+			}
+			rootWg.Done()
+		}()
+	}
 
 	//TODO: cleanup state -->
 	for _, c := range parser.State.ClassMap {
@@ -329,41 +423,36 @@ func moc(path, target, tags string, fast, slow, root bool, l int) {
 			delete(parser.State.ClassMap, c.Name)
 		}
 	}
+	parser.LibDepsMutex.Lock()
 	parser.LibDeps[parser.MOC] = make([]string, 0)
+	parser.LibDepsMutex.Unlock()
 	//<--
-
-	rootWg.Add(1)
-	go func() {
-		utils.RunCmd(exec.Command(utils.ToolPath("moc", target), filepath.Join(path, "moc.cpp"), "-o", filepath.Join(path, "moc_moc.h")), "run moc")
-		if tags != "" {
-			utils.Save(filepath.Join(path, "moc_moc.h"), "// +build "+tags+"\n\n"+utils.Load(filepath.Join(path, "moc_moc.h")))
-		}
-
-		if utils.QT_DOCKER() {
-			if idug, ok := os.LookupEnv("IDUG"); ok {
-				utils.RunCmd(exec.Command("chown", "-R", idug, path), "chown files to user")
-			}
-		}
-		rootWg.Done()
-	}()
 }
 
 func parse(path string) ([]*parser.Class, string, error) {
-	utils.Log.WithField("path", path).Debug("parse")
+	if base := filepath.Base(path); strings.HasPrefix(base, "rcc") || strings.HasPrefix(base, "moc") {
+		return nil, "", errors.New("file contains no moc structs")
+	}
 
 	if strings.HasPrefix(path, filepath.Join(runtime.GOROOT(), "src")) {
 		return nil, "", errors.New("path is in GOROOT/src")
 	}
 
+	utils.Log.WithField("path", path).Debug("parse")
+
 	src, err := ioutil.ReadFile(path)
 	if err != nil {
+		utils.Log.WithField("path", path).WithError(err).Debug("failed to read file")
 		return nil, "", err
 	}
 
 	file, err := goparser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
+		utils.Log.WithField("path", path).WithError(err).Debug("failed to parse file")
 		return nil, "", err
 	}
+
+	//TODO: cache moc struct hashes in moc.go files to indentify staled moc structs in staled go packages
 
 	var classes []*parser.Class
 	for _, d := range file.Decls {
@@ -422,7 +511,7 @@ func parse(path string) ([]*parser.Class, string, error) {
 					}
 
 					//TODO: sync, async, lazy, ...
-					//TODO: whole class shims
+					//TODO: whole class shims (generation of skeletons?)
 					//TODO: multi targets
 					//TODO: private
 					//TODO: qml register tag
@@ -446,12 +535,29 @@ func parse(path string) ([]*parser.Class, string, error) {
 
 						if strings.Contains(autoTag, "(") {
 							if !strings.HasPrefix(autoTag, "(this.") {
-								//TODO: concurrent + cache lookups
+								//TODO: concurrent?
 								var found bool
 								for _, imp := range file.Imports {
 									if strings.Contains(autoTag, "("+imp.Name.String()+".") {
-										name := strings.TrimSpace(utils.RunCmd(exec.Command("go", "list", "-e", "-f", "{{.Name}}", strings.Replace(imp.Path.Value, "\"", "", -1)), "get import name"))
-										dir := strings.TrimSpace(utils.RunCmd(exec.Command("go", "list", "-e", "-f", "{{.Dir}}", strings.Replace(imp.Path.Value, "\"", "", -1)), "get import dir"))
+										var name string
+										goNameCacheMutex.Lock()
+										if n, ok := goNameCache[imp.Path.Value]; ok {
+											name = n
+										} else {
+											name = strings.TrimSpace(utils.RunCmd(utils.GoList("{{.Name}}", strings.Replace(imp.Path.Value, "\"", "", -1), "-find"), "get import name"))
+											goNameCache[imp.Path.Value] = name
+										}
+										goNameCacheMutex.Unlock()
+
+										var dir string
+										goDirCacheMutex.Lock()
+										if d, ok := goDirCache[imp.Path.Value]; ok {
+											dir = d
+										} else {
+											dir = strings.TrimSpace(utils.RunCmd(utils.GoList("{{.Dir}}", strings.Replace(imp.Path.Value, "\"", "", -1), "-find"), "get import dir"))
+											goDirCache[imp.Path.Value] = dir
+										}
+										goDirCacheMutex.Unlock()
 
 										h := sha1.New()
 										h.Write([]byte(dir))
@@ -472,11 +578,30 @@ func parse(path string) ([]*parser.Class, string, error) {
 										if imp.Name.String() != "<nil>" && imp.Name.String() != "_" {
 											continue
 										}
-										name := strings.TrimSpace(utils.RunCmd(exec.Command("go", "list", "-e", "-f", "{{.Name}}", strings.Replace(imp.Path.Value, "\"", "", -1)), "get import name"))
+
+										var name string
+										goNameCacheMutex.Lock()
+										if n, ok := goNameCache[imp.Path.Value]; ok {
+											name = n
+										} else {
+											name = strings.TrimSpace(utils.RunCmd(utils.GoList("{{.Name}}", strings.Replace(imp.Path.Value, "\"", "", -1), "-find"), "get import name"))
+											goNameCache[imp.Path.Value] = name
+										}
+										goNameCacheMutex.Unlock()
+
 										if !strings.Contains(autoTag, "("+name+".") {
 											continue
 										}
-										dir := strings.TrimSpace(utils.RunCmd(exec.Command("go", "list", "-e", "-f", "{{.Dir}}", strings.Replace(imp.Path.Value, "\"", "", -1)), "get import dir"))
+
+										var dir string
+										goDirCacheMutex.Lock()
+										if d, ok := goDirCache[imp.Path.Value]; ok {
+											dir = d
+										} else {
+											dir = strings.TrimSpace(utils.RunCmd(utils.GoList("{{.Dir}}", strings.Replace(imp.Path.Value, "\"", "", -1), "-find"), "get import dir"))
+											goDirCache[imp.Path.Value] = dir
+										}
+										goDirCacheMutex.Unlock()
 
 										h := sha1.New()
 										h.Write([]byte(dir))
@@ -501,6 +626,11 @@ func parse(path string) ([]*parser.Class, string, error) {
 					if name[:1] != strings.ToLower(name[:1]) {
 						inbound = true
 						name = strings.ToLower(name[:1]) + strings.TrimPrefix(name[1:], name[:1])
+					}
+
+					if name == class.Name {
+						name += "z__"
+						tag += "z__"
 					}
 
 					typ := string(src[field.Type.Pos()-1 : field.Type.End()-1])
@@ -642,8 +772,9 @@ func cppTypeFromGoType(f *parser.Function, t string, class *parser.Class) (strin
 	tOld := t //TODO: also for differentiation of QVariant and *QVariant
 	//t = strings.TrimPrefix(t, "*")
 
+	//TODO: multidimensional array and nested maps
+
 	if strings.Count(t, "[") == 1 || strings.HasSuffix(t, "][]string") {
-		//TODO: multidimensional array and nested maps
 		if strings.HasPrefix(t, "[]") && t != "[]string" {
 			o, pureGoType := cppTypeFromGoType(f, strings.TrimPrefix(t, "[]"), class)
 			if pureGoType == "" {
@@ -651,17 +782,41 @@ func cppTypeFromGoType(f *parser.Function, t string, class *parser.Class) (strin
 			} else if strings.Contains(pureGoType, "error") {
 				return fmt.Sprintf("QList<%v>", o), t
 			}
-		}
-		if strings.HasPrefix(t, "map[") {
-			var head = fmt.Sprintf("map[%v]", strings.Split(strings.TrimPrefix(t, "map["), "]")[0])
+		} else if strings.HasPrefix(t, "map[") {
+			head := fmt.Sprintf("map[%v]", strings.Split(strings.TrimPrefix(t, "map["), "]")[0])
 			o1, pureGoType1 := cppTypeFromGoType(f, strings.Split(strings.TrimPrefix(t, "map["), "]")[0], class)
 			o2, pureGoType2 := cppTypeFromGoType(f, strings.TrimPrefix(t, head), class)
-			if pureGoType1 == "" && pureGoType2 == "" {
+			if pureGoType1 == "" && pureGoType2 == "" && o1 == "QString" {
+				return "QMap<QString, QVariant>", t
+			} else if pureGoType1 == "" && pureGoType2 == "" {
 				return fmt.Sprintf("QMap<%v, %v>", o1, o2), ""
 			} else if strings.Contains(pureGoType1, "error") || strings.Contains(pureGoType2, "error") {
 				return fmt.Sprintf("QMap<%v, %v>", o1, o2), t
 			}
 		}
+	}
+
+	if strings.Count(t, "[") >= 2 {
+		if !strings.HasSuffix(t, "QVariant") || strings.Count(t, "[") > 2 {
+			return "quintptr", tOld
+		}
+
+		if strings.HasPrefix(t, "[]") {
+			_, pureGoType := cppTypeFromGoType(f, strings.TrimPrefix(t, "[]"), class)
+			if pureGoType == "" || (strings.HasPrefix(pureGoType, "map[string]") && strings.HasSuffix(pureGoType, "QVariant")) {
+				return "QList<QVariant>", t
+			}
+		} else if strings.HasPrefix(t, "map[") {
+			head := fmt.Sprintf("map[%v]", strings.Split(strings.TrimPrefix(t, "map["), "]")[0])
+			o1, pureGoType1 := cppTypeFromGoType(f, strings.Split(strings.TrimPrefix(t, "map["), "]")[0], class)
+			o2, pureGoType2 := cppTypeFromGoType(f, strings.TrimPrefix(t, head), class)
+
+			if pureGoType1 == "" && (pureGoType2 == "" || (strings.HasPrefix(pureGoType2, "map[string]") && strings.HasSuffix(pureGoType2, "QVariant"))) &&
+				o1 == "QString" && (o2 == "QList<QVariant>" || o2 == "QMap<QString, QVariant>") {
+				return "QMap<QString, QVariant>", t
+			}
+		}
+		return "quintptr", tOld
 	}
 
 	switch t {
@@ -761,10 +916,10 @@ func parseNonMocDeps(files []string) {
 	utils.Log.Debug("parseNonMocDeps")
 
 	wg := new(sync.WaitGroup)
-	wc := make(chan bool, 50)
+	wc := make(chan bool, runtime.NumCPU()*2)
 
 	for _, fpath := range files {
-		if filepath.Base(fpath) == "moc.go" {
+		if base := filepath.Base(fpath); strings.HasPrefix(base, "rcc") || strings.HasPrefix(base, "moc") {
 			continue
 		}
 

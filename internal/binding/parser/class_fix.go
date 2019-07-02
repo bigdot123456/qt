@@ -3,10 +3,12 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/therecipe/qt/internal/utils"
 )
@@ -46,10 +48,26 @@ func (c *Class) fixEnums() {
 				}
 			}
 		}
-		if utils.QT_VERSION_NUM() <= 5042 && e.Fullname == "QFileSystemModel::Roles" {
+		if e.Fullname == "QFileSystemModel::Roles" && utils.QT_VERSION_NUM() <= 5042 {
 			for i := len(e.Values) - 1; i >= 0; i-- {
 				if v := e.Values[i]; v.Name == "FileIconRole" {
 					e.Values = append(e.Values[:i], e.Values[i+1:]...)
+				}
+			}
+		}
+		if utils.QT_MACPORTS() {
+			if e.Fullname == "QWebSettings::WebAttribute" {
+				for i := len(e.Values) - 1; i >= 0; i-- {
+					if v := e.Values[i]; v.Name == "MediaSourceEnabled" || v.Name == "MediaEnabled" || v.Name == "WebSecurityEnabled" || v.Name == "FullScreenSupportEnabled" {
+						e.Values = append(e.Values[:i], e.Values[i+1:]...)
+					}
+				}
+			}
+			if e.Fullname == "QWebPage::MessageSource" {
+				for i := len(e.Values) - 1; i >= 0; i-- {
+					if v := e.Values[i]; v.Name == "MessageSource" || v.Name == "MessageLevel" {
+						e.Values = append(e.Values[:i], e.Values[i+1:]...)
+					}
 				}
 			}
 		}
@@ -179,7 +197,10 @@ func (c *Class) fixLinkage() {
 	}
 }
 
-var pkgConfigIncludeDir string
+var (
+	pkgConfigIncludeDir      string
+	pkgConfigIncludeDirMutex = new(sync.Mutex)
+)
 
 func (c *Class) fixBases() {
 	if c.Module == MOC || c.Pkg != "" {
@@ -215,44 +236,42 @@ func (c *Class) fixBases() {
 	//}
 
 	var (
-		prefixPath string
+		prefixPath = utils.QT_INSTALL_PREFIX(State.Target)
 		infixPath  = "include"
 		suffixPath = string(filepath.Separator)
 	)
 
-	switch runtime.GOOS {
-	case "windows":
+	switch State.Target {
+	case "darwin":
 		{
-			if utils.QT_MSYS2() {
-				prefixPath = utils.QT_MSYS2_DIR()
-				if utils.QT_MSYS2_STATIC() {
-					prefixPath = filepath.Join(prefixPath, "qt5-static")
+			if utils.QT_NIX() {
+				for _, qmakepath := range strings.Split(os.Getenv("QMAKEPATH"), string(filepath.ListSeparator)) {
+					if utils.ExistsFile(filepath.Join(qmakepath, infixPath, c.DocModule+suffixPath+c.Name)) {
+						prefixPath = qmakepath
+						break
+					}
 				}
-			} else {
-				prefixPath = filepath.Join(utils.QT_DIR(), utils.QT_VERSION_MAJOR(), "mingw53_32")
+			} else if !utils.QT_STATIC() {
+				infixPath = "lib"
+				suffixPath = ".framework/Headers/"
 			}
 		}
 
-	case "darwin":
+	default:
 		{
-			prefixPath = utils.QT_DARWIN_DIR()
-			infixPath = "lib"
-			suffixPath = ".framework/Headers/"
-		}
-
-	case "linux":
-		{
-			switch {
-			case utils.QT_PKG_CONFIG():
+			if utils.QT_SAILFISH() {
+				prefixPath = "/srv/mer/targets/SailfishOS-" + utils.QT_SAILFISH_VERSION() + "-i486/usr/include/qt5"
+				infixPath = ""
+			} else if utils.QT_PKG_CONFIG() {
+				pkgConfigIncludeDirMutex.Lock()
 				if pkgConfigIncludeDir == "" {
 					pkgConfigIncludeDir = strings.TrimSpace(utils.RunCmd(exec.Command("pkg-config", "--variable=includedir", "Qt5Core"), "parser.class_includedir"))
 				}
 				prefixPath = pkgConfigIncludeDir
-			case utils.QT_SAILFISH():
-				prefixPath = "/srv/mer/targets/SailfishOS-" + utils.QT_SAILFISH_VERSION() + "-i486/usr/include/qt5"
-				infixPath = ""
-			default:
-				prefixPath = filepath.Join(utils.QT_DIR(), utils.QT_VERSION_MAJOR(), "gcc_64")
+				pkgConfigIncludeDirMutex.Unlock()
+			} else if strings.HasPrefix(State.Target, "sailfish") && runtime.GOOS == "darwin" {
+				infixPath = "lib"
+				suffixPath = ".framework/Headers/"
 			}
 		}
 	}
@@ -285,7 +304,7 @@ func (c *Class) fixBases() {
 
 	case "QUiLoader", "QEGLNativeContext", "QWGLNativeContext", "QGLXNativeContext", "QEglFSFunctions", "QWindowsWindowFunctions", "QCocoaNativeContext", "QXcbWindowFunctions", "QCocoaWindowFunctions":
 		{
-			if utils.QT_PKG_CONFIG() {
+			if utils.QT_PKG_CONFIG() && runtime.GOOS != "darwin" {
 				c.Bases = getBasesFromHeader(utils.LoadOptional(filepath.Join(prefixPath, c.Module, strings.ToLower(c.Name)+".h")), c.Name, c.Module)
 			} else {
 				c.Bases = getBasesFromHeader(utils.Load(filepath.Join(prefixPath, "include", c.Module, strings.ToLower(c.Name)+".h")), c.Name, c.Module)
@@ -295,7 +314,7 @@ func (c *Class) fixBases() {
 
 	case "QPlatformSystemTrayIcon", "QPlatformGraphicsBuffer":
 		{
-			if utils.QT_PKG_CONFIG() {
+			if utils.QT_PKG_CONFIG() && runtime.GOOS != "darwin" {
 				c.Bases = getBasesFromHeader(utils.LoadOptional(filepath.Join(prefixPath, c.Module, utils.QT_VERSION(), c.Module, "qpa", strings.ToLower(c.Name)+".h")), c.Name, c.Module)
 			} else {
 				c.Bases = getBasesFromHeader(utils.Load(filepath.Join(prefixPath, infixPath, c.Module+suffixPath+utils.QT_VERSION(), "QtGui", "qpa", strings.ToLower(c.Name)+".h")), c.Name, c.Module)
@@ -307,7 +326,7 @@ func (c *Class) fixBases() {
 		{
 			for _, m := range append(LibDeps[strings.TrimPrefix(c.Module, "Qt")], strings.TrimPrefix(c.Module, "Qt")) {
 				m = fmt.Sprintf("Qt%v", m)
-				if utils.QT_PKG_CONFIG() {
+				if utils.QT_PKG_CONFIG() && runtime.GOOS != "darwin" {
 					if utils.ExistsFile(filepath.Join(prefixPath, m, strings.ToLower(c.Name)+".h")) {
 						c.Bases = getBasesFromHeader(utils.LoadOptional(filepath.Join(prefixPath, m, strings.ToLower(c.Name)+".h")), c.Name, c.Module)
 						return
@@ -333,7 +352,7 @@ func (c *Class) fixBases() {
 	var found bool
 	for _, m := range libs {
 		m = fmt.Sprintf("Qt%v", m)
-		if utils.QT_PKG_CONFIG() {
+		if utils.QT_PKG_CONFIG() && runtime.GOOS != "darwin" {
 			if utils.ExistsFile(filepath.Join(prefixPath, m, c.Name)) {
 
 				var f = utils.LoadOptional(filepath.Join(prefixPath, m, c.Name))
@@ -371,7 +390,10 @@ func getBasesFromHeader(f string, n string, m string) string {
 	for i, l := range strings.Split(f, "\n") {
 
 		//TODO: reduce
-		if strings.Contains(l, "class "+n) || strings.Contains(l, "class Q_"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"_EXPORT "+n) || strings.Contains(l, "class Q"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"_EXPORT "+n) || strings.Contains(l, "class QDESIGNER_SDK_EXPORT "+n) || strings.Contains(l, "class QDESIGNER_EXTENSION_EXPORT "+n) || strings.Contains(l, "class QDESIGNER_UILIB_EXPORT "+n) || strings.Contains(l, "class  "+n) || strings.Contains(l, "class Q_"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"_EXPORT  "+n) || strings.Contains(l, "class Q"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"_EXPORT  "+n) || strings.Contains(l, "class QDESIGNER_SDK_EXPORT  "+n) || strings.Contains(l, "class QDESIGNER_EXTENSION_EXPORT  "+n) || strings.Contains(l, "class QDESIGNER_UILIB_EXPORT  "+n) {
+		if strings.Contains(l, "class "+n) ||
+			strings.Contains(l, "class Q_"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"_EXPORT "+n) || strings.Contains(l, "class Q"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"_EXPORT "+n) ||
+			strings.Contains(l, "class Q_"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"CORE_EXPORT "+n) || strings.Contains(l, "class Q"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"CORE_EXPORT "+n) ||
+			strings.Contains(l, "class QDESIGNER_SDK_EXPORT "+n) || strings.Contains(l, "class QDESIGNER_EXTENSION_EXPORT "+n) || strings.Contains(l, "class QDESIGNER_UILIB_EXPORT "+n) || strings.Contains(l, "class  "+n) || strings.Contains(l, "class Q_"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"_EXPORT  "+n) || strings.Contains(l, "class Q"+strings.ToUpper(strings.TrimPrefix(m, "Qt"))+"_EXPORT  "+n) || strings.Contains(l, "class QDESIGNER_SDK_EXPORT  "+n) || strings.Contains(l, "class QDESIGNER_EXTENSION_EXPORT  "+n) || strings.Contains(l, "class QDESIGNER_UILIB_EXPORT  "+n) {
 
 			if strings.Contains(l, n+" ") || strings.Contains(l, n+":") || strings.HasSuffix(l, n) {
 

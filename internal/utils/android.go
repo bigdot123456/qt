@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,7 +8,6 @@ import (
 	"strings"
 )
 
-//TODO: support for JDK 9
 func JDK_DIR() string {
 	if dir, ok := os.LookupEnv("JDK_DIR"); ok {
 		return filepath.Clean(dir)
@@ -17,14 +15,15 @@ func JDK_DIR() string {
 	if dir, ok := os.LookupEnv("JAVA_HOME"); ok {
 		return filepath.Clean(dir)
 	}
-	switch runtime.GOOS {
-	case "windows":
-		return fmt.Sprintf("C:\\Program Files\\Java\\jdk%v", strings.Split(RunCmd(exec.Command("java", "-version"), "deploy.jdk"), "\"")[1])
-	case "darwin":
-		return fmt.Sprintf("/Library/Java/JavaVirtualMachines/jdk%v.jdk/Contents/Home", strings.Split(RunCmd(exec.Command("java", "-version"), "deploy.jdk"), "\"")[1])
-	default:
-		return filepath.Join(os.Getenv("HOME"), "jdk")
+
+	for _, l := range strings.Split(RunCmd(exec.Command("java", "-XshowSettings:properties", "-version"), "deploy.jdk"), "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "java.home") {
+			return strings.Split(l, " = ")[1]
+		}
 	}
+
+	return filepath.Join(os.Getenv("HOME"), "jdk")
 }
 
 func ANDROID_SDK_DIR() string {
@@ -36,7 +35,7 @@ func ANDROID_SDK_DIR() string {
 	}
 	switch runtime.GOOS {
 	case "windows":
-		return "C:\\android-sdk-windows"
+		return windowsSystemDrive() + "\\android-sdk-windows"
 	case "darwin":
 		return filepath.Join(os.Getenv("HOME"), "android-sdk-macosx")
 	default:
@@ -52,7 +51,7 @@ func ANDROID_NDK_DIR() string {
 		return filepath.Clean(dir)
 	}
 	if runtime.GOOS == "windows" {
-		return "C:\\android-ndk-r14b"
+		return windowsSystemDrive() + "\\android-ndk-r18b"
 	}
-	return filepath.Join(os.Getenv("HOME"), "android-ndk-r14b")
+	return filepath.Join(os.Getenv("HOME"), "android-ndk-r18b")
 }

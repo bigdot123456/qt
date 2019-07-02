@@ -8,6 +8,7 @@ import (
 
 	"github.com/therecipe/qt/internal/binding/converter"
 	"github.com/therecipe/qt/internal/binding/parser"
+	"github.com/therecipe/qt/internal/cmd"
 	"github.com/therecipe/qt/internal/utils"
 )
 
@@ -24,7 +25,15 @@ func GoTemplate(module string, stub bool, mode int, pkg, target, tags string) []
 
 	if !(UseStub(stub, module, mode) || UseJs()) {
 		fmt.Fprintf(bb, "func cGoUnpackString(s C.struct_%v_PackedString) string { if int(s.len) == -1 {\n return C.GoString(s.data)\n }\n return C.GoStringN(s.data, C.int(s.len)) }\n", strings.Title(module))
+		fmt.Fprintf(bb, "func cGoUnpackBytes(s C.struct_%v_PackedString) []byte { if int(s.len) == -1 {\n gs := C.GoString(s.data)\n return *(*[]byte)(unsafe.Pointer(&gs))\n }\n return C.GoBytes(unsafe.Pointer(s.data), C.int(s.len)) }\n", strings.Title(module))
 	}
+
+	if UseJs() {
+		fmt.Fprint(bb, "func jsGoUnpackString(s string) string { dec, _ := hex.DecodeString(s)\n return string(dec)\n }\n") //TODO: calling it cGoUnpackString won't work, bug in go wasm ?
+		fmt.Fprint(bb, "func jsGoUnpackBytes(s string) []byte { dec, _ := hex.DecodeString(s)\n return dec\n }\n")
+	}
+
+	fmt.Fprint(bb, "func unpackStringList(s string) []string {\nif len(s) == 0 {\nreturn make([]string, 0)\n}\nreturn strings.Split(s, \"¡¦!\")\n}\n")
 
 	if module == "QtAndroidExtras" && utils.QT_VERSION_NUM() >= 5060 {
 		fmt.Fprint(bb, "func QAndroidJniEnvironment_ExceptionCatch() error {\n")
@@ -183,10 +192,27 @@ func New%vFromPointer(ptr unsafe.Pointer) (n *%[2]v) {
 			}
 
 			if !class.HasDestructor() {
-				if UseStub(stub, module, mode) || UseJs() {
+				if UseStub(stub, module, mode) {
 					fmt.Fprintf(bb, "\nfunc (ptr *%v) Destroy%v() {}\n\n", class.Name, strings.Title(class.Name))
 				} else if !class.IsSubClassOfQObject() {
-					fmt.Fprintf(bb, `
+					if UseJs() {
+						fmt.Fprintf(bb, `
+func (ptr *%[1]v) Destroy%[1]v() {
+	if ptr != nil {
+		%v
+		ptr.SetPointer(nil)
+		runtime.SetFinalizer(ptr, nil)
+	}
+}
+
+`, class.Name, func() string {
+							if class.HasCallbackFunctions() {
+								return "\nqt.DisconnectAllSignals(ptr.Pointer(), \"\")"
+							}
+							return ""
+						}())
+					} else {
+						fmt.Fprintf(bb, `
 func (ptr *%[1]v) Destroy%[1]v() {
 	if ptr != nil {
 		C.free(ptr.Pointer())%v
@@ -196,17 +222,30 @@ func (ptr *%[1]v) Destroy%[1]v() {
 }
 
 `, class.Name, func() string {
-						if class.HasCallbackFunctions() {
-							return "\nqt.DisconnectAllSignals(ptr.Pointer(), \"\")"
-						}
-						return ""
-					}())
+							if class.HasCallbackFunctions() {
+								return "\nqt.DisconnectAllSignals(ptr.Pointer(), \"\")"
+							}
+							return ""
+						}())
+					}
 				}
 			}
 
 			if mode == MOC {
+
+				if len(class.Constructors) > 0 {
+					if strings.ToLower(class.Constructors[0])[0] == class.Constructors[0][0] {
+						fmt.Fprintf(bb, "func (this *%v) %v() { this.%v() }\n", class.Name, strings.Title(class.Constructors[0]), class.Constructors[0])
+					}
+				}
+
 				if UseJs() {
-					fmt.Fprintf(bb, "//export callback%[1]v_Constructor\nfunc callback%[1]v_Constructor(ptr uintptr) {", class.Name)
+					if parser.UseWasm() {
+						fmt.Fprintf(bb, "//export callback%[1]v_Constructor\nfunc callback%[1]v_Constructor(_ js.Value, args []js.Value) interface{} {", class.Name)
+						fmt.Fprint(bb, "\nptr := uintptr(args[0].Int())\n")
+					} else {
+						fmt.Fprintf(bb, "//export callback%[1]v_Constructor\nfunc callback%[1]v_Constructor(ptr uintptr) {", class.Name)
+					}
 					fmt.Fprintf(bb, "this := New%vFromPointer(unsafe.Pointer(ptr))\nqt.Register(unsafe.Pointer(ptr), this)\n", strings.Title(class.Name))
 				} else {
 					fmt.Fprintf(bb, "//export callback%[1]v_Constructor\nfunc callback%[1]v_Constructor(ptr unsafe.Pointer) {", class.Name)
@@ -217,9 +256,7 @@ func (ptr *%[1]v) Destroy%[1]v() {
 				for _, bcn := range class.GetAllBases() {
 					if bc := parser.State.ClassMap[bcn]; bc.Module != class.Module {
 						if len(bc.Constructors) > 0 && lastModule != bc.Module {
-							if strings.ToLower(bc.Constructors[0])[0] != bc.Constructors[0][0] {
-								fmt.Fprintf(bb, "this.%v.%v()\n", strings.Title(bc.Name), bc.Constructors[0])
-							}
+							fmt.Fprintf(bb, "this.%v.%v()\n", strings.Title(bc.Name), strings.Title(bc.Constructors[0]))
 						}
 						lastModule = bc.Module
 					}
@@ -263,12 +300,6 @@ func (ptr *%[1]v) Destroy%[1]v() {
 									if f.Target == "" {
 										fmt.Fprintf(bb, "this.Connect%v(this.%v)\n", strings.Title(name), name)
 									} else {
-										t := f.Target
-										if strings.Count(t, ".") != 2 {
-											if !(len(strings.Split(f.Target, ".")) == 2 && strings.Split(f.Target, ".")[0] != "this" && strings.Split(f.Target, ".")[1][:1] == strings.ToLower(strings.Split(f.Target, ".")[1][:1])) {
-												t = f.Target + "." + name
-											}
-										}
 										tUpper := strings.Split(f.Target, ".")
 										tUpper[len(tUpper)-1] = strings.Title(tUpper[len(tUpper)-1])
 
@@ -280,12 +311,6 @@ func (ptr *%[1]v) Destroy%[1]v() {
 									}
 								} else {
 									if f.Target != "" {
-										t := f.Target
-										if strings.Count(t, ".") != 2 {
-											if !(len(strings.Split(f.Target, ".")) == 2 && strings.Split(f.Target, ".")[0] != "this" && strings.Split(f.Target, ".")[1][:1] == strings.ToLower(strings.Split(f.Target, ".")[1][:1])) {
-												t = f.Target + "." + name
-											}
-										}
 										tCon := strings.Split(f.Target, ".")
 										tCon[len(tCon)-1] = "Connect" + strings.Title(tCon[len(tCon)-1])
 
@@ -314,6 +339,7 @@ func (ptr *%[1]v) Destroy%[1]v() {
 								if p.Inbound {
 									name = strings.Title(name)
 								}
+								name = strings.TrimSuffix(name, "z__")
 
 								if p.Connect == 1 {
 									if p.Target == "" {
@@ -434,10 +460,79 @@ func (ptr *%[1]v) Destroy%[1]v() {
 
 				connect(class, false)
 
+				if UseJs() {
+					if parser.UseWasm() {
+						bb.WriteString("\nreturn nil\n")
+					}
+				}
+
 				fmt.Fprint(bb, "}\n\n")
 			}
-		}
 
+			if class.Name == "QVariant" {
+				fmt.Fprint(bb, "type qVariant_ITF interface { ToVariant() *QVariant }\n")
+				fmt.Fprint(bb, "func NewQVariant1(i interface{}) *QVariant {\n")
+				fmt.Fprint(bb, "switch d:= i.(type) {\n")
+
+				has := make(map[string]struct{})
+				fmt.Fprint(bb, "case *QVariant:\nreturn d\n")
+				has["QVariant"] = struct{}{}
+
+				for _, f := range class.Functions {
+					if f.Meta == parser.CONSTRUCTOR && len(f.Parameters) == 1 && f.IsSupported() {
+						v := f.Parameters[0].Value
+						gt := converter.GoType(f, v, f.Parameters[0].PureGoType)
+						if _, ok := has[gt]; ok {
+							continue
+						}
+						if gt == "string" && !strings.Contains(f.Parameters[0].Value, "const char") {
+							continue
+						}
+						if gt == "map[string]*QVariant" && !strings.Contains(f.Parameters[0].Value, "const QMap<") {
+							continue
+						}
+						has[gt] = struct{}{}
+
+						if c, ok := parser.IsClass(parser.CleanValue(v)); ok && parser.State.ClassMap[c].IsSupported() {
+							fmt.Fprintf(bb, "case *%v:\n", gt)
+						} else {
+							fmt.Fprintf(bb, "case %v:\n", gt)
+						}
+						fmt.Fprintf(bb, "return NewQVariant%v(d)\n", f.OverloadNumber)
+					}
+				}
+				fmt.Fprint(bb, "case qVariant_ITF:\nreturn d.ToVariant()\n")
+				fmt.Fprint(bb, "default:\nreturn NewQVariant()\n")
+				fmt.Fprint(bb, "\n}\n}\n")
+
+				//
+
+				fmt.Fprint(bb, "func (v *QVariant) ToInterface() interface{} {\n")
+				fmt.Fprint(bb, "switch v.Type() {\n")
+
+				for _, v := range class.Enums[0].Values {
+					if c, ok := parser.IsClass("Q" + v.Name); ok {
+						if !parser.State.ClassMap[c].IsSupported() &&
+							!(v.Name == "Map" ||
+								v.Name == "String" ||
+								v.Name == "StringList" ||
+								v.Name == "Hash") {
+							continue
+						}
+					}
+
+					if f := class.GetFunction("to" + v.Name); f != nil && f.IsSupported() {
+						fmt.Fprintf(bb, "case QVariant__%v:\n", v.Name)
+						if len(f.Parameters) == 0 {
+							fmt.Fprintf(bb, "return v.To%v()\n", v.Name)
+						} else {
+							fmt.Fprintf(bb, "return v.To%v(nil)\n", v.Name)
+						}
+					}
+				}
+				fmt.Fprint(bb, "\n}\nreturn v\n}\n")
+			}
+		}
 		cTemplate(bb, class, goEnum, goFunction, "\n\n", true)
 	}
 
@@ -445,27 +540,74 @@ func (ptr *%[1]v) Destroy%[1]v() {
 		fmt.Fprint(bb, "func init() {\n")
 		for _, l := range strings.Split(bb.String(), "\n") {
 			if strings.HasPrefix(l, "//export") {
-				fmt.Fprintf(bb, "qt.WASM.Set(\"_%[1]v\", %[1]v)\n", strings.TrimPrefix(l, "//export "))
+				if parser.UseWasm() {
+					fmt.Fprintf(bb, "qt.WASM.Set(\"_%[1]v\", js.FuncOf(%[1]v))\n", strings.TrimPrefix(l, "//export "))
+				} else {
+					fmt.Fprintf(bb, "qt.WASM.Set(\"_%[1]v\", %[1]v)\n", strings.TrimPrefix(l, "//export "))
+				}
 			}
 		}
 
+		if parser.UseWasm() {
+			//TODO:
+		} else {
+			fmt.Fprint(bb, "var module *js.Object\n")
+			fmt.Fprintf(bb, "if m := js.Global.Get(\"%v\"); m == js.Undefined {\n", goModule(module))
+			fmt.Fprint(bb, "\tmodule = new(js.Object)\n")
+			fmt.Fprintf(bb, "\tjs.Global.Set(\"%v\", module)\n", goModule(module))
+			fmt.Fprint(bb, "} else {\n")
+			fmt.Fprint(bb, "\tmodule = m\n")
+			fmt.Fprint(bb, "}\n")
+		}
+
 		for _, c := range parser.SortedClassesForModule(module, true) {
+			implemented := make(map[string]struct{})
 			for _, f := range c.Functions {
-				if f.Meta != parser.CONSTRUCTOR {
+				if f.Meta != parser.CONSTRUCTOR && !f.Static {
 					continue
 				}
-				if !f.IsSupported() {
+				if strings.Contains(f.Name, "RegisterMetaType") || strings.Contains(f.Name, "RegisterType") { //TODO:
 					continue
 				}
+				var _, e = implemented[fmt.Sprint(f.Name, f.OverloadNumber)]
+				if e || !f.IsSupported() {
+					continue
+				}
+				implemented[fmt.Sprint(f.Name, f.OverloadNumber)] = struct{}{}
+
 				var ip string
 				oldsm := f.SignalMode
 				f.SignalMode = parser.CALLBACK
+				f.FakeForJSCallback = true
 				ip = converter.GoHeaderInput(f)
 				ip = strings.TrimPrefix(ip, "ptr uintptr, ")
 				f.SignalMode = oldsm
-				out := fmt.Sprintf("qt.WASM.Set(\"%v\", func(%v) *js.Object { return js.MakeWrapper(%v(%v)); })\n", converter.GoHeaderName(f), ip, converter.GoHeaderName(f), converter.GoInputParametersForCallback(f))
+				f.FakeForJSCallback = false
+				var out string
+				if parser.UseWasm() {
+					out = "" //TODO: export classes for jsinterop example
+				} else {
+					if converter.GoHeaderOutput(f) != "" {
+						out = fmt.Sprintf("module.Set(\"%v\", func(%v) *js.Object { return qt.MakeWrapper(%v(%v)); })\n", converter.GoHeaderName(f), ip, converter.GoHeaderName(f), converter.GoInputParametersForCallback(f))
+					} else {
+						out = fmt.Sprintf("module.Set(\"%v\", func(%v) { %v(%v); })\n", converter.GoHeaderName(f), ip, converter.GoHeaderName(f), converter.GoInputParametersForCallback(f))
+					}
+				}
 				if !strings.Contains(out, "unsupported_") && !strings.Contains(out, "C.") && strings.Contains(bb.String(), converter.GoHeaderName(f)+"(") {
 					bb.WriteString(out)
+				}
+			}
+
+			for _, e := range c.Enums {
+				for _, v := range e.Values {
+					if v.Name == "ByteOrder" {
+						continue
+					}
+					if parser.UseWasm() {
+						//TODO:
+					} else {
+						fmt.Fprintf(bb, "module.Set(\"%v__%v\", int64(%v__%v))\n", strings.Split(e.Fullname, "::")[0], v.Name, strings.Split(e.Fullname, "::")[0], v.Name)
+					}
 				}
 			}
 		}
@@ -557,7 +699,7 @@ import "C"
 	}
 
 	fmt.Fprint(bb, "import (\n")
-	for _, m := range append(parser.GetLibs(), "qt", "strings", "unsafe", "log", "runtime", "fmt", "errors", "js", "time") {
+	for _, m := range append(parser.GetLibs(), "qt", "strings", "unsafe", "log", "runtime", "fmt", "errors", "js", "time", "hex", "reflect") {
 		mlow := strings.ToLower(m)
 		if strings.Contains(inputString, fmt.Sprintf(" %v.", mlow)) ||
 			strings.Contains(inputString, fmt.Sprintf("\t%v.", mlow)) ||
@@ -569,14 +711,21 @@ import "C"
 			strings.Contains(inputString, fmt.Sprintf(")%v.", mlow)) ||
 			strings.Contains(inputString, fmt.Sprintf("std_%v.", mlow)) {
 			switch mlow {
-			case "strings", "unsafe", "log", "runtime", "fmt", "errors", "time":
+			case "strings", "unsafe", "log", "runtime", "fmt", "errors", "time", "reflect":
 				fmt.Fprintf(bb, "\"%v\"\n", mlow)
+
+			case "hex":
+				fmt.Fprintln(bb, "\"encoding/hex\"")
 
 			case "qt":
 				fmt.Fprintln(bb, "\"github.com/therecipe/qt\"")
 
 			case "js":
-				fmt.Fprintln(bb, "\"github.com/gopherjs/gopherjs/js\"")
+				if parser.UseWasm() {
+					fmt.Fprintln(bb, "\"syscall/js\"")
+				} else {
+					fmt.Fprintln(bb, "\"github.com/gopherjs/gopherjs/js\"")
+				}
 
 			default:
 				if mode == MOC {
@@ -599,7 +748,7 @@ import "C"
 							containsSelf bool
 						)
 
-						for _, l := range parser.LibDeps["build_ios"] {
+						for _, l := range parser.LibDeps["build_static"] {
 							if l == m {
 								containsSub = true
 							}
@@ -611,24 +760,24 @@ import "C"
 						if !containsSelf || !containsSub {
 
 							if !containsSelf {
-								parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], oldModuleGo)
+								parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], oldModuleGo)
 
 								switch oldModuleGo {
 								case "Multimedia":
-									parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], "MultimediaWidgets")
+									parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], "MultimediaWidgets")
 								case "Quick":
-									parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], "QuickWidgets")
+									parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], "QuickWidgets")
 								}
 							}
 
 							if !containsSub {
-								parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], m)
+								parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], m)
 
 								switch m {
 								case "Multimedia":
-									parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], "MultimediaWidgets")
+									parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], "MultimediaWidgets")
 								case "Quick":
-									parser.LibDeps["build_ios"] = append(parser.LibDeps["build_ios"], "QuickWidgets")
+									parser.LibDeps["build_static"] = append(parser.LibDeps["build_static"], "QuickWidgets")
 								}
 							}
 
@@ -641,7 +790,11 @@ import "C"
 	}
 
 	if mode == MOC {
-		for custom, m := range parser.GetCustomLibs(target, tags) {
+		env, tagsEnv, _, _ := cmd.BuildEnv(target, "", "")
+		if tags != "" {
+			tagsEnv = append(tagsEnv, strings.Split(tags, " ")...)
+		}
+		for custom, m := range parser.GetCustomLibs(target, env, tagsEnv) {
 			switch {
 			case strings.Contains(m, "/vendor/"):
 				fmt.Fprintf(bb, "\"%v\"\n", custom)
@@ -664,7 +817,7 @@ import "C"
 
 	bb.WriteString(inputString)
 
-	out, err := format.Source(renameSubClasses(bb.Bytes(), "_"))
+	out, err := format.Source(renameSubClasses(bb.Bytes()))
 	if err != nil {
 		utils.Log.WithError(err).Errorln("failed to format:", pkg, module)
 		out = bb.Bytes()
@@ -673,7 +826,7 @@ import "C"
 	//TODO: regexp
 	if mode == MOC {
 		pre := string(out)
-		libsm := make(map[string]struct{}, 0)
+		libsm := make(map[string]struct{})
 		for _, c := range parser.State.ClassMap {
 			if c.Pkg != "" && c.IsSubClassOfQObject() {
 				libsm[c.Module] = struct{}{}
@@ -704,13 +857,16 @@ import "C"
 	return out
 }
 
-//TODO:
-func renameSubClasses(in []byte, r string) []byte {
+//TODO: regexp
+func renameSubClasses(in []byte) []byte {
 	for _, c := range parser.State.ClassMap {
 		if c.Fullname != "" {
-			in = []byte(strings.Replace(string(in), c.Name, strings.Replace(c.Fullname, "::", r, -1), -1))
-			in = []byte(strings.Replace(string(in), "C."+strings.Replace(c.Fullname, "::", r, -1), "C."+c.Name, -1))
-			in = []byte(strings.Replace(string(in), "_New"+strings.Replace(c.Fullname, "::", r, -1), "_New"+c.Name, -1))
+			sep := []string{"\n", ".", "\"", " ", "*", "(", ")", "{", "C.", "_ITF", "_PTR", " New", ".New", "(New", "\"New", "From", "Destroy"}
+			for _, p := range sep {
+				for _, s := range sep {
+					in = bytes.Replace(in, []byte(p+c.Name+s), []byte(p+strings.Replace(c.Fullname, "::", "_", -1)+s), -1)
+				}
+			}
 		}
 	}
 	return in

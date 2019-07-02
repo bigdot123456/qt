@@ -9,10 +9,17 @@ import (
 
 	"github.com/therecipe/qt/internal/binding/converter"
 	"github.com/therecipe/qt/internal/binding/parser"
+	"github.com/therecipe/qt/internal/utils"
 )
 
 func cppFunctionCallback(function *parser.Function) string {
-	var output = fmt.Sprintf("%v { %v };", cppFunctionCallbackHeader(function), cppFunctionCallbackBody(function))
+	var output = fmt.Sprintf("%v { %v%v };", cppFunctionCallbackHeader(function),
+		func() string {
+			if utils.QT_DEBUG_CPP() {
+				return fmt.Sprintf("qDebug() << \"callback\" << \"%v\";\n", function.Fullname)
+			}
+			return ""
+		}(), cppFunctionCallbackBody(function))
 	if function.IsSupported() {
 		return cppFunctionCallbackWithGuards(function, output)
 	}
@@ -113,7 +120,13 @@ func cppFunctionCallbackBody(function *parser.Function) string {
 }
 
 func cppFunction(function *parser.Function) string {
-	var output = fmt.Sprintf("%v\n{\n%v\n}", cppFunctionHeader(function), cppFunctionUnused(function, cppFunctionBodyWithGuards(function)))
+	var output = fmt.Sprintf("%v\n{\n%v%v\n}", cppFunctionHeader(function),
+		func() string {
+			if utils.QT_DEBUG_CPP() {
+				return fmt.Sprintf("qDebug() << \"function\" << \"%v\";\n", function.Fullname)
+			}
+			return ""
+		}(), cppFunctionUnused(function, cppFunctionBodyWithGuards(function)))
 	if UseJs() {
 		if !strings.Contains(output, "_Packed") && !strings.Contains(output, "emscripten::val") {
 			output = strings.Replace(output, converter.CppHeaderName(function), "_KEEPALIVE_"+converter.CppHeaderName(function), -1)
@@ -296,21 +309,21 @@ func cppFunctionBody(function *parser.Function) string {
 		return out
 	}
 
-	var bb = new(bytes.Buffer)
+	bb := new(bytes.Buffer)
 	defer bb.Reset()
 
 	bb.WriteString("\t")
 
 	var deduce = func(input []string, polyName string, inner bool, body string) string {
-		var bb = new(bytes.Buffer)
-		defer bb.Reset()
+		bbi := new(bytes.Buffer)
+		defer bbi.Reset()
 		for _, polyType := range input {
 			if polyType == "QObject" || polyType == input[len(input)-1] {
 				continue
 			}
 
 			if strings.HasPrefix(polyType, "QMac") {
-				fmt.Fprint(bb, "\n\t#ifdef Q_OS_OSX\n\t\t")
+				fmt.Fprint(bbi, "\n\t#ifdef Q_OS_OSX\n\t\t")
 			}
 
 			base := input[len(input)-1]
@@ -318,23 +331,25 @@ func cppFunctionBody(function *parser.Function) string {
 				base = "QObject"
 			}
 
-			fmt.Fprintf(bb, "if (dynamic_cast<%v*>(static_cast<%v*>(%v))) {\n", polyType, base, polyName)
+			fmt.Fprintf(bbi, "if (dynamic_cast<%v*>(static_cast<%v*>(%v))) {\n", polyType, base, polyName)
 
 			if strings.HasPrefix(polyType, "QMac") {
-				fmt.Fprint(bb, "\t#else\n\t\tif (false) {\n\t#endif\n")
+				fmt.Fprint(bbi, "\t#else\n\t\tif (false) {\n\t#endif\n")
 			}
 
-			fmt.Fprintf(bb, "\t%v\n", func() string {
+			fmt.Fprintf(bbi, "\t%v\n", func() string {
 				var ibody string
 				if function.Default && polyName == "ptr" {
-					if fakeDefault {
+					if fakeDefault && !inner {
 						ibody = strings.Replace(body, "static_cast<"+input[len(input)-1]+"*>("+polyName+")->"+input[len(input)-1]+"::", "static_cast<My"+polyType+"*>("+polyName+")->My"+polyType+"::", -1)
 
 						//TODO: only temporary until invoke works ->
-						for _, s := range append(parser.State.ClassMap["QAbstractItemView"].GetAllDerivations(), "QAbstractItemView") {
-							if strings.Contains(ibody, "static_cast<My"+s+"*>(ptr)->My"+s+"::update()") {
-								ibody = ""
-								break
+						if c, ok := parser.State.ClassMap["QAbstractItemView"]; ok {
+							for _, s := range append(c.GetAllDerivations(), "QAbstractItemView") {
+								if strings.Contains(ibody, "static_cast<My"+s+"*>(ptr)->My"+s+"::update()") {
+									ibody = ""
+									break
+								}
 							}
 						}
 						//<-
@@ -357,7 +372,7 @@ func cppFunctionBody(function *parser.Function) string {
 				}
 				return ibody
 			}())
-			fmt.Fprint(bb, "\t} else ")
+			fmt.Fprint(bbi, "\t} else ")
 		}
 
 		if len(input) > 0 {
@@ -374,15 +389,11 @@ func cppFunctionBody(function *parser.Function) string {
 			}
 		}
 
-		if fakeDefault {
-			//TODO: cleanup ?
-			//body = strings.Replace(body, "static_cast<"+function.ClassName()+"*>(ptr)->"+function.ClassName()+"::", "static_cast<My"+function.ClassName()+"*>(ptr)->My"+function.ClassName()+"::", -1)
-		}
-		if bb.String() == "" {
+		if bbi.String() == "" {
 			return body
 		}
-		fmt.Fprintf(bb, "{\n\t%v\n\t}", func() string {
-			if fakeDefault {
+		fmt.Fprintf(bbi, "{\n\t%v\n\t}", func() string {
+			if fakeDefault && !inner {
 				body = strings.Replace(body, "static_cast<"+function.ClassName()+"*>(ptr)->"+function.ClassName()+"::", "static_cast<My"+function.ClassName()+"*>(ptr)->My"+function.ClassName()+"::", -1)
 			}
 			if strings.Count(body, "\n") > 1 {
@@ -390,7 +401,7 @@ func cppFunctionBody(function *parser.Function) string {
 			}
 			return body
 		}())
-		return bb.String()
+		return bbi.String()
 	}
 
 	if function.Static {
@@ -417,7 +428,7 @@ func cppFunctionBodyInternal(function *parser.Function) string {
 							return `	static int argcs = argc;
 	static char** argvs = static_cast<char**>(malloc(argcs * sizeof(char*)));
 
-	QList<QByteArray> aList = QString::fromStdString(argv["dataP"].as<std::string>()).toUtf8().split('|');
+	QList<QByteArray> aList = QString::fromStdString(argv["data"].as<std::string>()).toUtf8().split('|');
 	for (int i = 0; i < argcs; i++)
 		argvs[i] = (new QByteArray(aList.at(i)))->data();
 
@@ -544,6 +555,15 @@ func cppFunctionBodyInternal(function *parser.Function) string {
 				)
 			}
 
+			if function.Fullname == "QObject::invokeMethod" {
+				return `	QVariant returnArg;
+	if (arg)
+		QMetaObject::invokeMethod(static_cast<QObject*>(ptr), const_cast<const char*>(name), Q_RETURN_ARG(QVariant, returnArg), Q_ARG(QVariant, *static_cast<QVariant*>(arg)));
+	else
+		QMetaObject::invokeMethod(static_cast<QObject*>(ptr), const_cast<const char*>(name), Q_RETURN_ARG(QVariant, returnArg));
+	return new QVariant(returnArg);`
+			}
+
 			return fmt.Sprintf("\t%v%v;",
 
 				func() string {
@@ -584,12 +604,14 @@ func cppFunctionBodyInternal(function *parser.Function) string {
 									}
 									return fmt.Sprintf("%v<%v>", parser.CleanValue(function.Container), strings.TrimPrefix(function.Parameters[0].Value, "const "))
 								}
-								if strings.HasSuffix(function.Name, "_newList") {
-									//will be overriden
-								}
-								if strings.HasSuffix(function.Name, "_keyList") {
-									//will be overriden
-								}
+								/*
+									if strings.HasSuffix(function.Name, "_newList") {
+										//will be overriden
+									}
+									if strings.HasSuffix(function.Name, "_keyList") {
+										//will be overriden
+									}
+								*/
 								return function.ClassName()
 							}(),
 						)

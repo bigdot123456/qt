@@ -11,30 +11,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/therecipe/qt/internal/cmd"
+	"github.com/sirupsen/logrus"
 
+	"github.com/therecipe/qt/internal/cmd"
 	"github.com/therecipe/qt/internal/utils"
 )
 
 func build(mode, target, path, ldFlagsCustom, tagsCustom, name, depPath string, fast, comply bool) {
 	env, tags, ldFlags, out := cmd.BuildEnv(target, name, depPath)
-	if (!fast || utils.QT_STUB()) && !utils.QT_FAT() {
+	if ((!fast || utils.QT_STUB()) && !utils.QT_FAT()) || target == "js" || target == "wasm" {
 		tags = append(tags, "minimal")
-	}
-	if ldFlagsCustom != "" {
-		ldFlags = append(ldFlags, strings.Split(ldFlagsCustom, " ")...)
 	}
 	if tagsCustom != "" {
 		tags = append(tags, strings.Split(tagsCustom, " ")...)
 	}
-	if utils.QT_DEBUG_QML() {
+	if utils.QT_DEBUG_QML() && target == runtime.GOOS {
 		out = filepath.Join(depPath, name)
 	}
 
 	var ending string
 	switch target {
 	case "android", "android-emulator", "ios", "ios-simulator":
-		utils.Save(filepath.Join(path, "cgo_main_wrapper.go"), "package main\nimport \"C\"\n//export go_main_wrapper\nfunc go_main_wrapper() { main() }")
+		utils.Save(filepath.Join(path, "cgo_main_wrapper.go"), "package main\nimport (\n\"C\"\n\"os\"\n\"unsafe\"\n)\n//export go_main_wrapper\nfunc go_main_wrapper(argc C.int, argv unsafe.Pointer) {\nos.Args=make([]string,int(argc))\nfor i,b := range (*[1<<3]*C.char)(argv)[:int(argc):int(argc)] {\nos.Args[i] = C.GoString(b)\n}\nmain()\n}")
 	case "windows":
 		ending = ".exe"
 	case "sailfish", "sailfish-emulator":
@@ -43,16 +41,35 @@ func build(mode, target, path, ldFlagsCustom, tagsCustom, name, depPath string, 
 			return
 		}
 	case "js":
-		build_js(target, path, out, tags)
+		env["CGO_ENABLED"] = "0"
+		build_js(target, path, env, tags, out)
 		return
+	case "wasm":
+		env["CGO_ENABLED"] = "0"
+		ending = ".wasm"
+	case "linux":
+		if fast || utils.QT_PKG_CONFIG() || utils.QT_STATIC() {
+			env["CGO_LDFLAGS"] = strings.Replace(env["CGO_LDFLAGS"], "-Wl,-rpath,$ORIGIN/lib -Wl,--disable-new-dtags", "", -1)
+		}
 	}
 
 	var pattern string
-	if strings.Contains(runtime.Version(), "1.1") {
+	if v := utils.GOVERSION(); strings.Contains(v, "1.1") || strings.Contains(v, "devel") {
 		pattern = "all="
 	}
 
-	cmd := exec.Command("go", "build", "-p", strconv.Itoa(runtime.GOMAXPROCS(0)), "-v", fmt.Sprintf("-ldflags=%v\"%v\"", pattern, strings.Join(ldFlags, "\" \"")), "-o", out+ending)
+	if utils.Log.Level == logrus.DebugLevel && target != "wasm" {
+		ldFlags = append(ldFlags, "-extldflags=-v")
+	}
+
+	cmd := exec.Command("go", "build", "-p", strconv.Itoa(runtime.GOMAXPROCS(0)), "-v")
+	if len(ldFlags) > 0 {
+		if v := utils.GOVERSION(); !((strings.Contains(v, "1.13") || strings.Contains(v, "devel")) && utils.UseGOMOD(path)) {
+			cmd.Args = append(cmd.Args, fmt.Sprintf("-ldflags=%v%v", pattern, escapeFlags(ldFlags, ldFlagsCustom)))
+		}
+	}
+	cmd.Args = append(cmd.Args, "-o", out+ending)
+
 	cmd.Dir = path
 
 	if fast && !utils.QT_STUB() {
@@ -63,6 +80,8 @@ func build(mode, target, path, ldFlagsCustom, tagsCustom, name, depPath string, 
 		utils.MkdirAll(depPath + "_obj")
 		cmd.Env = append(cmd.Env, fmt.Sprintf("GOTMPDIR=%v", depPath+"_obj"))
 		cmd.Args = append(cmd.Args, "-a", "-x", "-work")
+	} else if utils.Log.Level == logrus.DebugLevel {
+		cmd.Args = append(cmd.Args, "-x")
 	}
 
 	cmd.Args = append(cmd.Args, fmt.Sprintf("-tags=\"%v\"", strings.Join(tags, "\" \"")))
@@ -82,10 +101,37 @@ func build(mode, target, path, ldFlagsCustom, tagsCustom, name, depPath string, 
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%v=%v", key, value))
 	}
 
+	//TODO: seems to be an go module issue
+	if v := utils.GOVERSION(); strings.Contains(v, "1.13") || strings.Contains(v, "devel") {
+		if utils.UseGOMOD(path) {
+			var String = func(c *exec.Cmd) string {
+				b := new(strings.Builder)
+				b.WriteString(c.Path)
+				for _, a := range c.Args[1:] {
+					b.WriteByte(' ')
+					b.WriteString(a)
+				}
+				return b.String()
+			}
+			if runtime.GOOS != "windows" {
+				cmd.Args = []string{"bash", "-c", String(cmd)}
+			} else {
+				//cmd.Args = []string{"cmd", "/C", String(cmd)}
+			}
+			cmd.Args = append(cmd.Args, fmt.Sprintf("-ldflags=%v%v", pattern, escapeFlags(ldFlags, ldFlagsCustom)))
+			cmd.Path, _ = exec.LookPath(cmd.Args[0])
+		}
+	}
+
 	utils.RunCmd(cmd, fmt.Sprintf("build for %v on %v", target, runtime.GOOS))
 
-	if target == "darwin" {
-		strip := exec.Command("strip", "-x", out) //TODO: -u -r
+	if target == "darwin" && !fast {
+		var strip *exec.Cmd
+		if runtime.GOOS == target {
+			strip = exec.Command("strip", "-x", out) //TODO: -u -r
+		} else {
+			strip = exec.Command(strings.TrimSuffix(env["CC"], "clang")+"strip", "-x", out) //TODO: -u -r
+		}
 		strip.Dir = path
 		utils.RunCmd(strip, fmt.Sprintf("strip binary for %v on %v", target, runtime.GOOS))
 	}
@@ -152,6 +198,7 @@ func build_sailfish(target, path, ldFlagsCustom, name string) {
 	time.Sleep(10 * time.Second)
 
 	for _, l := range []string{"libmpc.so.3", "libmpfr.so.4", "libgmp.so.10", "libpthread_nonshared.a", "libc_nonshared.a"} {
+		sailfish_ssh("2222", "root", "rm", fmt.Sprintf("/usr/lib/%v", l))
 		sailfish_ssh("2222", "root", "ln", "-s", fmt.Sprintf("/srv/mer/toolings/SailfishOS-"+utils.QT_SAILFISH_VERSION()+"/usr/lib/%v", l), fmt.Sprintf("/usr/lib/%v", l))
 	}
 
@@ -160,11 +207,15 @@ func build_sailfish(target, path, ldFlagsCustom, name string) {
 		arch, gcc = "armv7hl", "gnueabi"
 	}
 
-	sailfish_ssh("2222", "root", "ln", "-s", fmt.Sprintf("/srv/mer/toolings/SailfishOS-"+utils.QT_SAILFISH_VERSION()+"/opt/cross/bin/%v-meego-linux-%v-as", arch, gcc), fmt.Sprintf("/srv/mer/toolings/SailfishOS-"+utils.QT_SAILFISH_VERSION()+"/opt/cross/libexec/gcc/%v-meego-linux-%v/4.8.3/as", arch, gcc))
-	sailfish_ssh("2222", "root", "ln", "-s", fmt.Sprintf("/srv/mer/toolings/SailfishOS-"+utils.QT_SAILFISH_VERSION()+"/opt/cross/bin/%v-meego-linux-%v-ld", arch, gcc), fmt.Sprintf("/srv/mer/toolings/SailfishOS-"+utils.QT_SAILFISH_VERSION()+"/opt/cross/libexec/gcc/%v-meego-linux-%v/4.8.3/ld", arch, gcc))
+	gccVersion := "4.8.3"
+	if strings.HasPrefix(utils.QT_SAILFISH_VERSION(), "3.") {
+		gccVersion = "4.9.4"
+	}
+	sailfish_ssh("2222", "root", "ln", "-s", fmt.Sprintf("/srv/mer/toolings/SailfishOS-"+utils.QT_SAILFISH_VERSION()+"/opt/cross/bin/%v-meego-linux-%v-as", arch, gcc), fmt.Sprintf("/srv/mer/toolings/SailfishOS-"+utils.QT_SAILFISH_VERSION()+"/opt/cross/libexec/gcc/%v-meego-linux-%v/%v/as", arch, gcc, gccVersion))
+	sailfish_ssh("2222", "root", "ln", "-s", fmt.Sprintf("/srv/mer/toolings/SailfishOS-"+utils.QT_SAILFISH_VERSION()+"/opt/cross/bin/%v-meego-linux-%v-ld", arch, gcc), fmt.Sprintf("/srv/mer/toolings/SailfishOS-"+utils.QT_SAILFISH_VERSION()+"/opt/cross/libexec/gcc/%v-meego-linux-%v/%v/ld", arch, gcc, gccVersion))
 
 	var pattern string
-	if strings.Contains(runtime.Version(), "1.1") {
+	if v := utils.GOVERSION(); strings.Contains(v, "1.1") || strings.Contains(v, "devel") {
 		pattern = "all="
 	}
 
@@ -181,13 +232,16 @@ func build_sailfish(target, path, ldFlagsCustom, name string) {
 	}
 }
 
-func build_js(target, path, out string, tags []string) {
+func build_js(target string, path string, env map[string]string, tags []string, out string) {
 	cmd := exec.Command(filepath.Join(utils.GOBIN(), "gopherjs"), "build", ".", "-v", "-m", "-o", filepath.Join(filepath.Dir(out), "go.js"))
 	cmd.Dir = path
 
-	//TODO: tags = tags[1:]
-	//TOOD: cmd.Args = append(cmd.Args, fmt.Sprintf("--tags=\"%v\"", strings.Join(tags, " ")))
-	cmd.Args = append(cmd.Args, "--tags=minimal")
+	//TODO (bug in gopherjs?): cmd.Args = append(cmd.Args, fmt.Sprintf("--tags=\"%v\"", strings.Join(tags[1:], " ")))
+	cmd.Args = append(cmd.Args, fmt.Sprintf("--tags=%v", tags[1]))
+
+	for key, value := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%v=%v", key, value))
+	}
 
 	utils.RunCmd(cmd, fmt.Sprintf("build for %v on %v", target, runtime.GOOS))
 }

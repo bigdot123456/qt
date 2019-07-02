@@ -17,7 +17,7 @@ import (
 	"github.com/therecipe/qt/internal/utils"
 )
 
-func Install(target string, docker, vagrant bool) {
+func Install(target string, docker, vagrant, failfast bool) {
 	utils.Log.Infof("running: 'qtsetup install %v' [docker=%v] [vagrant=%v]", target, docker, vagrant)
 
 	if strings.HasPrefix(target, "sailfish") && !utils.QT_SAILFISH() {
@@ -46,7 +46,7 @@ func Install(target string, docker, vagrant bool) {
 		}
 	}
 
-	if !(target == runtime.GOOS || target == "js") && !utils.QT_FAT() {
+	if !(target == runtime.GOOS || target == "js" || target == "wasm") && !utils.QT_FAT() {
 		utils.Log.Debugf("target is %v; skipping installation of modules", target)
 		return
 	}
@@ -63,32 +63,39 @@ func Install(target string, docker, vagrant bool) {
 		if utils.QT_STUB() || docker {
 			mode = "stub"
 		}
-		utils.Log.Infof("installing %v qt/%v", mode, strings.ToLower(module))
+
+		var license string
+		switch module {
+		case "Charts", "DataVisualization", "VirtualKeyboard":
+			license = strings.Repeat(" ", 21-len(module)) + "[GPLv3]"
+		}
+		utils.Log.Infof("installing %v qt/%v%v", mode, strings.ToLower(module), license)
 
 		if utils.QT_DYNAMIC_SETUP() && mode == "full" {
 			cc, com := templater.ParseCgo(strings.ToLower(module), target)
 			if cc != "" {
-				if target == "js" {
+				if target == "js" || target == "wasm" {
 					com = strings.Replace(com, strings.ToLower(module)+".js_plugin_import.cpp ", "", -1)
 				}
 				cmd := exec.Command(cc, strings.Split(com, " ")...)
 				cmd.Dir = utils.GoQtPkgPath(strings.ToLower(module))
-				if target == "js" {
+				if target == "js" || target == "wasm" {
 					for key, value := range env {
 						cmd.Env = append(cmd.Env, fmt.Sprintf("%v=%v", key, value))
 					}
 				}
 				utils.RunCmdOptional(cmd, fmt.Sprintf("failed to create dynamic lib for %v (%v) on %v", target, strings.ToLower(module), runtime.GOOS))
 
-				if target == "js" {
-					continue
+				if !(target == "js" || target == "wasm") {
+					utils.RemoveAll(utils.GoQtPkgPath(strings.ToLower(module), strings.ToLower(module)+".cpp"))
+					utils.RemoveAll(utils.GoQtPkgPath(strings.ToLower(module), "_obj"))
+					templater.ReplaceCgo(strings.ToLower(module), target)
 				}
-
-				utils.RemoveAll(utils.GoQtPkgPath(strings.ToLower(module), strings.ToLower(module)+".cpp"))
-				utils.RemoveAll(utils.GoQtPkgPath(strings.ToLower(module), "_obj"))
-
-				templater.ReplaceCgo(strings.ToLower(module), target)
 			}
+		}
+
+		if target == "js" || target == "wasm" {
+			env["CGO_ENABLED"] = "0"
 		}
 
 		cmd := exec.Command("go", "install", "-p", strconv.Itoa(runtime.GOMAXPROCS(0)), "-v")
@@ -108,13 +115,21 @@ func Install(target string, docker, vagrant bool) {
 		if target == "js" {
 			cmd.Args = append(cmd.Args, "-v")
 		} else {
+			if target == "linux" {
+				env["CGO_LDFLAGS"] = strings.Replace(env["CGO_LDFLAGS"], "-Wl,-rpath,$ORIGIN/lib -Wl,--disable-new-dtags", "", -1)
+			}
 			for key, value := range env {
 				cmd.Env = append(cmd.Env, fmt.Sprintf("%v=%v", key, value))
 			}
 		}
 
-		if _, err := utils.RunCmdOptionalError(cmd, fmt.Sprintf("install %v", strings.ToLower(module))); err != nil {
+		if msg, err := utils.RunCmdOptionalError(cmd, fmt.Sprintf("install %v", strings.ToLower(module))); err != nil {
+			println(msg)
 			failed = append(failed, strings.ToLower(module))
+			if strings.ToLower(module) == "core" || failfast {
+				utils.Log.Errorf("failed to install '%v'; aborting setup", strings.ToLower(module))
+				os.Exit(1)
+			}
 		}
 	}
 

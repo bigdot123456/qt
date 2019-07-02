@@ -9,6 +9,7 @@ package webview
 import "C"
 import (
 	"runtime"
+	"strings"
 	"unsafe"
 )
 
@@ -18,51 +19,18 @@ func cGoUnpackString(s C.struct_QtWebView_PackedString) string {
 	}
 	return C.GoStringN(s.data, C.int(s.len))
 }
-
-type QWebViewFactory struct {
-	ptr unsafe.Pointer
-}
-
-type QWebViewFactory_ITF interface {
-	QWebViewFactory_PTR() *QWebViewFactory
-}
-
-func (ptr *QWebViewFactory) QWebViewFactory_PTR() *QWebViewFactory {
-	return ptr
-}
-
-func (ptr *QWebViewFactory) Pointer() unsafe.Pointer {
-	if ptr != nil {
-		return ptr.ptr
+func cGoUnpackBytes(s C.struct_QtWebView_PackedString) []byte {
+	if int(s.len) == -1 {
+		gs := C.GoString(s.data)
+		return *(*[]byte)(unsafe.Pointer(&gs))
 	}
-	return nil
+	return C.GoBytes(unsafe.Pointer(s.data), C.int(s.len))
 }
-
-func (ptr *QWebViewFactory) SetPointer(p unsafe.Pointer) {
-	if ptr != nil {
-		ptr.ptr = p
+func unpackStringList(s string) []string {
+	if len(s) == 0 {
+		return make([]string, 0)
 	}
-}
-
-func PointerFromQWebViewFactory(ptr QWebViewFactory_ITF) unsafe.Pointer {
-	if ptr != nil {
-		return ptr.QWebViewFactory_PTR().Pointer()
-	}
-	return nil
-}
-
-func NewQWebViewFactoryFromPointer(ptr unsafe.Pointer) (n *QWebViewFactory) {
-	n = new(QWebViewFactory)
-	n.SetPointer(ptr)
-	return
-}
-
-func (ptr *QWebViewFactory) DestroyQWebViewFactory() {
-	if ptr != nil {
-		C.free(ptr.Pointer())
-		ptr.SetPointer(nil)
-		runtime.SetFinalizer(ptr, nil)
-	}
+	return strings.Split(s, "¡¦!")
 }
 
 type QtWebView struct {
